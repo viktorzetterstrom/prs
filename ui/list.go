@@ -15,10 +15,10 @@ import (
 
 var (
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
-	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170"))
+	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("255"))
 	paginationStyle   = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
 	helpStyle         = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1)
-	numberStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	numberStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("33"))
 	statsStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	copiedStyle       = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("10")).Bold(true)
 )
@@ -43,9 +43,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 
 	pr := i.pr
-	number := numberStyle.Render(fmt.Sprintf("#%d", pr.Number))
 	stats := statsStyle.Render(fmt.Sprintf("(+%d/-%d)", pr.Additions, pr.Deletions))
-	str := fmt.Sprintf("%s %s %s", number, stats, pr.Title)
+	number := numberStyle.Render(fmt.Sprintf("[#%d]", pr.Number))
+	str := fmt.Sprintf("%s %s %s", stats, pr.Title, number)
 
 	fn := itemStyle.Render
 	if index == m.Index() {
@@ -124,12 +124,19 @@ func Run(prs []github.PR) error {
 
 	const defaultWidth = 80
 
-	l := list.New(items, itemDelegate{}, defaultWidth, 14)
+	listHeight := len(prs) + 1
+	maxHeight := 16
+	if listHeight > maxHeight {
+		listHeight = maxHeight
+	}
+
+	l := list.New(items, itemDelegate{}, defaultWidth, listHeight)
 	l.Title = ""
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
 	l.SetShowHelp(false)
+	l.SetShowPagination(false) // Disable pagination for clean display
 	l.Styles.PaginationStyle = paginationStyle
 	l.Styles.HelpStyle = helpStyle
 
