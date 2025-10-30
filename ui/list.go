@@ -142,7 +142,7 @@ func Run(prs []github.PR) error {
 
 	m := model{list: l, prs: prs}
 
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("error running program: %w", err)
 	}
