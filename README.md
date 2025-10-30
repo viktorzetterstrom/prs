@@ -10,3 +10,4 @@ go build -o prs
 ```bash
 go install
 ```
+
