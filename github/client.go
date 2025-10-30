@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"time"
 )
 
 type PR struct {
@@ -14,8 +15,20 @@ type PR struct {
 	URL       string `json:"url"`
 }
 
-func GetPRs() ([]PR, error) {
-	cmd := exec.Command("gh", "pr", "list", "--search", "involves:@me", "--json", "number,title,additions,deletions,url")
+func GetPRs(lastWeek bool) ([]PR, error) {
+	var searchQuery string
+	var args []string
+
+	if lastWeek {
+		oneWeekAgo := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
+		searchQuery = fmt.Sprintf("author:@me updated:>%s", oneWeekAgo)
+		args = []string{"pr", "list", "--state", "all", "--search", searchQuery, "--json", "number,title,additions,deletions,url"}
+	} else {
+		searchQuery = "author:@me"
+		args = []string{"pr", "list", "--search", searchQuery, "--json", "number,title,additions,deletions,url"}
+	}
+
+	cmd := exec.Command("gh", args...)
 	output, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
