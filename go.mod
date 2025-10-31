@@ -1,4 +1,4 @@
-module prs
+module github.com/viktorzetterstrom/prs
 
 go 1.25.2
 

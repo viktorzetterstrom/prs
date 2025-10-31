@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"io"
-	"prs/github"
 	"strings"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/viktorzetterstrom/prs/github"
 )
 
 var (

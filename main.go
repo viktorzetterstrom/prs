@@ -3,9 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/viktorzetterstrom/prs/github"
+	"github.com/viktorzetterstrom/prs/ui"
 	"os"
-	"prs/github"
-	"prs/ui"
 )
 
 func main() {
