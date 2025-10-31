@@ -45,7 +45,8 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	pr := i.pr
 	stats := statsStyle.Render(fmt.Sprintf("(+%d/-%d)", pr.Additions, pr.Deletions))
 	number := numberStyle.Render(fmt.Sprintf("[#%d]", pr.Number))
-	str := fmt.Sprintf("%s %s %s", stats, pr.Title, number)
+	statusEmoji := pr.StatusEmoji()
+	str := fmt.Sprintf("%s %s %s %s", stats, pr.Title, number, statusEmoji)
 
 	fn := itemStyle.Render
 	if index == m.Index() {

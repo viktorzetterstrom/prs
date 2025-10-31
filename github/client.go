@@ -13,6 +13,7 @@ type PR struct {
 	Additions int    `json:"additions"`
 	Deletions int    `json:"deletions"`
 	URL       string `json:"url"`
+	State     string `json:"state"`
 }
 
 func GetPRs(lastWeek bool) ([]PR, error) {
@@ -22,10 +23,10 @@ func GetPRs(lastWeek bool) ([]PR, error) {
 	if lastWeek {
 		oneWeekAgo := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
 		searchQuery = fmt.Sprintf("author:@me updated:>%s", oneWeekAgo)
-		args = []string{"pr", "list", "--state", "all", "--search", searchQuery, "--json", "number,title,additions,deletions,url"}
+
+		args = []string{"pr", "list", "--state", "all", "--search", searchQuery, "--json", "number,title,additions,deletions,url,state"}
 	} else {
-		searchQuery = "author:@me"
-		args = []string{"pr", "list", "--search", searchQuery, "--json", "number,title,additions,deletions,url"}
+		args = []string{"pr", "list", "--search", "author:@me", "--json", "number,title,additions,deletions,url,state"}
 	}
 
 	cmd := exec.Command("gh", args...)
@@ -58,4 +59,17 @@ func (pr PR) FormatForSlack() string {
 		title,
 		pr.Number,
 		pr.URL)
+}
+
+func (pr PR) StatusEmoji() string {
+	switch pr.State {
+	case "OPEN":
+		return "🟢"
+	case "MERGED":
+		return "🟣"
+	case "CLOSED":
+		return "🔴"
+	default:
+		return ""
+	}
 }
