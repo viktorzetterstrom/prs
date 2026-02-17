@@ -28,7 +28,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	if err := ui.Run(prs); err != nil {
+	if err := ui.Run(prs, *lastWeek); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
