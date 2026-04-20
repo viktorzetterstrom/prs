@@ -13,6 +13,8 @@ import (
 	"github.com/viktorzetterstrom/prs/github"
 )
 
+const refreshInterval = 30 * time.Second
+
 var (
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("255"))
@@ -21,6 +23,7 @@ var (
 	numberStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("33"))
 	statsStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	copiedStyle       = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("10")).Bold(true)
+	timestampStyle    = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("241"))
 )
 
 type item struct {
@@ -58,14 +61,45 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprint(w, fn(str))
 }
 
+type tickMsg time.Time
+
+type refreshMsg struct {
+	prs []github.PR
+	err error
+}
+
 type model struct {
-	list   list.Model
-	prs    []github.PR
-	copied bool
+	list        list.Model
+	prs         []github.PR
+	copied      bool
+	lastWeek    bool
+	lastUpdated time.Time
+	refreshing  bool
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
+
+func fetchPRs(lastWeek bool) tea.Cmd {
+	return func() tea.Msg {
+		prs, err := github.GetPRs(lastWeek)
+		return refreshMsg{prs: prs, err: err}
+	}
+}
+
+func formatTimeAgo(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < 5*time.Second:
+		return "Updated just now"
+	case d < time.Minute:
+		return fmt.Sprintf("Updated %ds ago", int(d.Seconds()))
+	default:
+		return fmt.Sprintf("Updated %dm ago", int(d.Minutes()))
+	}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -74,10 +108,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list.SetWidth(msg.Width)
 		return m, nil
 
+	case tickMsg:
+		var cmds []tea.Cmd
+		cmds = append(cmds, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+			return tickMsg(t)
+		}))
+		if !m.refreshing && time.Since(m.lastUpdated) >= refreshInterval {
+			m.refreshing = true
+			cmds = append(cmds, fetchPRs(m.lastWeek))
+		}
+		return m, tea.Batch(cmds...)
+
+	case refreshMsg:
+		m.refreshing = false
+		if msg.err == nil {
+			m.prs = msg.prs
+			items := make([]list.Item, len(msg.prs))
+			for i, pr := range msg.prs {
+				items[i] = item{pr: pr}
+			}
+			m.list.SetItems(items)
+			if m.list.Index() >= len(m.prs) && len(m.prs) > 0 {
+				m.list.Select(len(m.prs) - 1)
+			}
+			m.lastUpdated = time.Now()
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		switch keypress := msg.String(); keypress {
 		case "q", "ctrl+c":
 			return m, tea.Quit
+
+		case "r":
+			if !m.refreshing {
+				m.refreshing = true
+				return m, fetchPRs(m.lastWeek)
+			}
+			return m, nil
 
 		case " ", "enter":
 			if len(m.prs) > 0 && m.list.Index() < len(m.prs) {
@@ -110,14 +178,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 type resetCopiedMsg struct{}
 
 func (m model) View() string {
+	var footer strings.Builder
 	if m.copied {
-		copiedMsg := copiedStyle.Render("✓ Copied to clipboard!")
-		return m.list.View() + "\n\n" + copiedMsg
+		footer.WriteString("\n" + copiedStyle.Render("✓ Copied to clipboard!"))
 	}
-	return m.list.View()
+	if m.refreshing {
+		footer.WriteString("\n" + timestampStyle.Render("Refreshing..."))
+	} else {
+		footer.WriteString("\n" + timestampStyle.Render(formatTimeAgo(m.lastUpdated)))
+	}
+	return m.list.View() + footer.String()
 }
 
-func Run(prs []github.PR) error {
+func Run(prs []github.PR, lastWeek bool) error {
 	items := make([]list.Item, len(prs))
 	for i, pr := range prs {
 		items[i] = item{pr: pr}
@@ -141,7 +214,12 @@ func Run(prs []github.PR) error {
 	l.Styles.PaginationStyle = paginationStyle
 	l.Styles.HelpStyle = helpStyle
 
-	m := model{list: l, prs: prs}
+	m := model{
+		list:        l,
+		prs:         prs,
+		lastWeek:    lastWeek,
+		lastUpdated: time.Now(),
+	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
