@@ -16,16 +16,31 @@ type PR struct {
 	State     string `json:"state"`
 }
 
-func GetPRs(lastWeek bool) ([]PR, error) {
-	var searchQuery string
+type QueryKind int
+
+const (
+	QueryActive QueryKind = iota
+	QueryLastWeek
+)
+
+func (k QueryKind) Label() string {
+	switch k {
+	case QueryLastWeek:
+		return "Last 7 days"
+	default:
+		return "Active"
+	}
+}
+
+func GetPRs(kind QueryKind) ([]PR, error) {
 	var args []string
 
-	if lastWeek {
+	switch kind {
+	case QueryLastWeek:
 		oneWeekAgo := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
-		searchQuery = fmt.Sprintf("author:@me updated:>%s", oneWeekAgo)
-
+		searchQuery := fmt.Sprintf("author:@me updated:>%s", oneWeekAgo)
 		args = []string{"pr", "list", "--state", "all", "--search", searchQuery, "--json", "number,title,additions,deletions,url,state"}
-	} else {
+	default:
 		args = []string{"pr", "list", "--search", "author:@me", "--json", "number,title,additions,deletions,url,state"}
 	}
 
