@@ -50,7 +50,7 @@ func GetPRs(kind QueryKind) ([]PR, error) {
 	switch kind {
 	case QueryLastWeek:
 		oneWeekAgo := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
-		searchQuery := fmt.Sprintf("author:@me updated:>%s", oneWeekAgo)
+		searchQuery := fmt.Sprintf("author:@me is:closed updated:>%s", oneWeekAgo)
 		args = []string{"pr", "list", "--state", "all", "--search", searchQuery, "--json", jsonFields}
 	default:
 		args = []string{"pr", "list", "--search", "author:@me", "--json", jsonFields}
