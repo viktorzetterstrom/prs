@@ -11,7 +11,10 @@ import (
 
 func main() {
 	lastWeek := flag.Bool("last-week", false, "Start on the 'Last 7 days' tab")
+	demo := flag.Bool("demo", false, "Populate with fake PRs that exercise every status emoji")
 	flag.Parse()
+
+	github.DemoMode = *demo
 
 	initial := github.QueryActive
 	if *lastWeek {

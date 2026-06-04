@@ -42,9 +42,17 @@ func (k QueryKind) Label() string {
 	}
 }
 
+// DemoMode short-circuits GetPRs to return canned data instead of shelling out
+// to `gh`. Used by the --demo CLI flag to preview the TUI without a network call.
+var DemoMode bool
+
 const jsonFields = "number,title,additions,deletions,url,state,isDraft,mergeable,reviewDecision,statusCheckRollup"
 
 func GetPRs(kind QueryKind) ([]PR, error) {
+	if DemoMode {
+		return demoPRs(kind), nil
+	}
+
 	var args []string
 
 	switch kind {
