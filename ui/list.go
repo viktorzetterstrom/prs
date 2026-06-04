@@ -327,6 +327,7 @@ func Run(initial github.QueryKind) error {
 
 	views := []*viewState{
 		{kind: github.QueryActive},
+		{kind: github.QueryActionable},
 		{kind: github.QueryLastWeek},
 	}
 	active := 0

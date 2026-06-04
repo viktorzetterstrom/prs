@@ -30,11 +30,14 @@ type QueryKind int
 
 const (
 	QueryActive QueryKind = iota
+	QueryActionable
 	QueryLastWeek
 )
 
 func (k QueryKind) Label() string {
 	switch k {
+	case QueryActionable:
+		return "Action needed"
 	case QueryLastWeek:
 		return "Last 7 days"
 	default:
@@ -59,6 +62,11 @@ func GetPRs(kind QueryKind) ([]PR, error) {
 	case QueryLastWeek:
 		oneWeekAgo := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
 		searchQuery := fmt.Sprintf("author:@me is:closed updated:>%s", oneWeekAgo)
+		args = []string{"pr", "list", "--state", "all", "--search", searchQuery, "--json", jsonFields}
+	case QueryActionable:
+		// Open PRs in this repo that want something from you — review requests or mentions —
+		// but exclude your own so they don't double up with the Active tab.
+		searchQuery := "is:open -author:@me (review-requested:@me OR mentions:@me)"
 		args = []string{"pr", "list", "--state", "all", "--search", searchQuery, "--json", jsonFields}
 	default:
 		args = []string{"pr", "list", "--search", "author:@me", "--json", jsonFields}

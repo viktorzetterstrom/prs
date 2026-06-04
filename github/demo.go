@@ -55,6 +55,36 @@ func demoPRs(kind QueryKind) []PR {
 		return open
 	}
 
+	if kind == QueryActionable {
+		return []PR{
+			{
+				Number: 422, Title: "Add new /presence endpoint",
+				Additions: 64, Deletions: 7,
+				URL:   "https://github.com/example/repo/pull/422",
+				State: "OPEN", Mergeable: "MERGEABLE", ReviewDecision: "REVIEW_REQUIRED",
+			},
+			{
+				Number: 418, Title: "Refactor auth middleware",
+				Additions: 120, Deletions: 50,
+				URL:   "https://github.com/example/repo/pull/418",
+				State: "OPEN", Mergeable: "MERGEABLE", ReviewDecision: "REVIEW_REQUIRED",
+				StatusCheckRollup: []StatusCheck{{Conclusion: "FAILURE", Status: "COMPLETED"}},
+			},
+			{
+				Number: 410, Title: "Discussion: rate limiting strategy",
+				Additions: 5, Deletions: 0,
+				URL:   "https://github.com/example/repo/pull/410",
+				State: "OPEN", IsDraft: true,
+			},
+			{
+				Number: 405, Title: "Fix typo in onboarding docs",
+				Additions: 1, Deletions: 1,
+				URL:   "https://github.com/example/repo/pull/405",
+				State: "OPEN", Mergeable: "MERGEABLE",
+			},
+		}
+	}
+
 	// Last 7 days: only terminal states — open PRs already live on the Active tab.
 	return []PR{
 		{
