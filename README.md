@@ -6,8 +6,6 @@ Two tabs are available: **Active** (your open PRs) and **Last 7 days** (PRs auth
 
 `--last-week` makes the TUI start on the **Last 7 days** tab.
 
-`--demo` shows a fixed list of fake PRs that exercise every status emoji — handy for previewing the TUI without needing real PRs in every state.
-
 ## Status emojis
 
 | Emoji | Meaning                                      |
