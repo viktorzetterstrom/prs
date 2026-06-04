@@ -8,6 +8,22 @@ Two tabs are available: **Active** (your open PRs) and **Last 7 days** (everythi
 
 `--last-week` makes the TUI start on the **Last 7 days** tab.
 
+## Status emojis
+
+| Emoji | Meaning                                      |
+| ----- | -------------------------------------------- |
+| 🟣    | Merged                                       |
+| ⚫    | Closed without merging                       |
+| 📝    | Draft                                        |
+| ⚠️    | Merge conflict — needs a rebase              |
+| ❌    | CI is failing                                |
+| 💬    | Reviewer requested changes                   |
+| ✅    | Approved — ready to merge                    |
+| 👀    | Waiting on a reviewer                        |
+| 🟢    | Open, nothing flagged                        |
+
+Priority order: the first matching state wins (so an approved PR with failing CI shows ❌, because that's the actionable thing).
+
 
 ## Install
 ```bash
