@@ -3,32 +3,25 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
+
 	"github.com/viktorzetterstrom/prs/github"
 	"github.com/viktorzetterstrom/prs/ui"
-	"os"
 )
 
 func main() {
-	lastWeek := flag.Bool("last-week", false, "Show all PRs (including closed) from the last week")
+	lastWeek := flag.Bool("last-week", false, "Start on the 'Last 7 days' tab")
+	demo := flag.Bool("demo", false, "Populate with fake PRs that exercise every status emoji")
 	flag.Parse()
 
-	prs, err := github.GetPRs(*lastWeek)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error fetching PRs: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Make sure you're in a git repository and have gh CLI installed and authenticated.\n")
-		os.Exit(1)
+	github.DemoMode = *demo
+
+	initial := github.QueryActive
+	if *lastWeek {
+		initial = github.QueryLastWeek
 	}
 
-	if len(prs) == 0 {
-		if *lastWeek {
-			fmt.Println("No pull requests found from the last week.")
-		} else {
-			fmt.Println("No open pull requests found.")
-		}
-		os.Exit(0)
-	}
-
-	if err := ui.Run(prs, *lastWeek); err != nil {
+	if err := ui.Run(initial); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

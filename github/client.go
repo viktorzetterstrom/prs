@@ -7,26 +7,61 @@ import (
 	"time"
 )
 
-type PR struct {
-	Number    int    `json:"number"`
-	Title     string `json:"title"`
-	Additions int    `json:"additions"`
-	Deletions int    `json:"deletions"`
-	URL       string `json:"url"`
-	State     string `json:"state"`
+type StatusCheck struct {
+	Conclusion string `json:"conclusion"`
+	State      string `json:"state"`
+	Status     string `json:"status"`
 }
 
-func GetPRs(lastWeek bool) ([]PR, error) {
-	var searchQuery string
+type PR struct {
+	Number            int           `json:"number"`
+	Title             string        `json:"title"`
+	Additions         int           `json:"additions"`
+	Deletions         int           `json:"deletions"`
+	URL               string        `json:"url"`
+	State             string        `json:"state"`
+	IsDraft           bool          `json:"isDraft"`
+	Mergeable         string        `json:"mergeable"`
+	ReviewDecision    string        `json:"reviewDecision"`
+	StatusCheckRollup []StatusCheck `json:"statusCheckRollup"`
+}
+
+type QueryKind int
+
+const (
+	QueryActive QueryKind = iota
+	QueryLastWeek
+)
+
+func (k QueryKind) Label() string {
+	switch k {
+	case QueryLastWeek:
+		return "Last 7 days"
+	default:
+		return "Active"
+	}
+}
+
+// DemoMode short-circuits GetPRs to return canned data instead of shelling out
+// to `gh`. Used by the --demo CLI flag to preview the TUI without a network call.
+var DemoMode bool
+
+const jsonFields = "number,title,additions,deletions,url,state,isDraft,mergeable,reviewDecision,statusCheckRollup"
+
+func GetPRs(kind QueryKind) ([]PR, error) {
+	if DemoMode {
+		return demoPRs(kind), nil
+	}
+
 	var args []string
 
-	if lastWeek {
+	switch kind {
+	case QueryLastWeek:
 		oneWeekAgo := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
-		searchQuery = fmt.Sprintf("author:@me updated:>%s", oneWeekAgo)
-
-		args = []string{"pr", "list", "--state", "all", "--search", searchQuery, "--json", "number,title,additions,deletions,url,state"}
-	} else {
-		args = []string{"pr", "list", "--search", "author:@me", "--json", "number,title,additions,deletions,url,state"}
+		searchQuery := fmt.Sprintf("author:@me is:closed updated:>%s", oneWeekAgo)
+		args = []string{"pr", "list", "--state", "all", "--search", searchQuery, "--json", jsonFields}
+	default:
+		args = []string{"pr", "list", "--search", "author:@me", "--json", jsonFields}
 	}
 
 	cmd := exec.Command("gh", args...)
@@ -51,25 +86,67 @@ func (pr PR) FormatForDisplay() string {
 }
 
 func (pr PR) FormatForSlack() string {
-	title := pr.Title
-
 	return fmt.Sprintf("`(+%d/-%d)` %s [#%d](%s)",
 		pr.Additions,
 		pr.Deletions,
-		title,
+		pr.Title,
 		pr.Number,
 		pr.URL)
 }
 
+// ciStatus rolls up StatusCheckRollup into FAILURE / PENDING / SUCCESS / "".
+// Empty means no checks are configured.
+func (pr PR) ciStatus() string {
+	if len(pr.StatusCheckRollup) == 0 {
+		return ""
+	}
+	pending := false
+	for _, c := range pr.StatusCheckRollup {
+		switch c.Conclusion {
+		case "FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE":
+			return "FAILURE"
+		}
+		switch c.State {
+		case "FAILURE", "ERROR":
+			return "FAILURE"
+		case "PENDING", "EXPECTED":
+			pending = true
+		}
+		// CheckRun: status != COMPLETED means still running
+		if c.Conclusion == "" && c.Status != "" && c.Status != "COMPLETED" {
+			pending = true
+		}
+	}
+	if pending {
+		return "PENDING"
+	}
+	return "SUCCESS"
+}
+
 func (pr PR) StatusEmoji() string {
 	switch pr.State {
-	case "OPEN":
-		return "🟢"
 	case "MERGED":
 		return "🟣"
 	case "CLOSED":
-		return "🔴"
-	default:
-		return ""
+		return "⚫"
 	}
+	// OPEN beyond this point.
+	if pr.IsDraft {
+		return "📝"
+	}
+	if pr.Mergeable == "CONFLICTING" {
+		return "⚠️"
+	}
+	if pr.ciStatus() == "FAILURE" {
+		return "❌"
+	}
+	switch pr.ReviewDecision {
+	case "CHANGES_REQUESTED":
+		return "💬"
+	case "APPROVED":
+		return "✅"
+	case "REVIEW_REQUIRED":
+		return "👀"
+	}
+	return "🟢"
 }
