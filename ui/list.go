@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 	"io"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -24,6 +26,7 @@ var (
 	statsStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	copiedStyle       = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("10")).Bold(true)
 	timestampStyle    = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("241"))
+	errorStyle        = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("9")).Bold(true)
 )
 
 type item struct {
@@ -68,13 +71,31 @@ type refreshMsg struct {
 	err error
 }
 
+type openedMsg struct{ err error }
+
 type model struct {
 	list        list.Model
 	prs         []github.PR
 	copied      bool
+	openErr     error
 	lastWeek    bool
 	lastUpdated time.Time
 	refreshing  bool
+}
+
+func openInBrowser(url string) tea.Cmd {
+	return func() tea.Msg {
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			cmd = exec.Command("open", url)
+		case "windows":
+			cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		default:
+			cmd = exec.Command("xdg-open", url)
+		}
+		return openedMsg{err: cmd.Start()}
+	}
 }
 
 func (m model) Init() tea.Cmd {
@@ -161,12 +182,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
+		case "o":
+			if len(m.prs) > 0 && m.list.Index() < len(m.prs) {
+				m.openErr = nil
+				return m, openInBrowser(m.prs[m.list.Index()].URL)
+			}
+			return m, nil
+
 		default:
 			m.copied = false
+			m.openErr = nil
 		}
 
 	case resetCopiedMsg:
 		m.copied = false
+		return m, nil
+
+	case openedMsg:
+		m.openErr = msg.err
 		return m, nil
 	}
 
@@ -181,6 +214,9 @@ func (m model) View() string {
 	var footer strings.Builder
 	if m.copied {
 		footer.WriteString("\n" + copiedStyle.Render("✓ Copied to clipboard!"))
+	}
+	if m.openErr != nil {
+		footer.WriteString("\n" + errorStyle.Render(fmt.Sprintf("⚠ Could not open browser: %v", m.openErr)))
 	}
 	if m.refreshing {
 		footer.WriteString("\n" + timestampStyle.Render("Refreshing..."))

@@ -11,3 +11,13 @@ You can also slap on `--last-week` to show all PRs you've been part of for the l
 ```bash
 go install github.com/viktorzetterstrom/prs@latest
 ```
+
+## Keybindings
+
+| Key            | Action                                       |
+| -------------- | -------------------------------------------- |
+| ↑ / ↓          | Navigate the list                            |
+| Space / Enter  | Copy the selected PR (Slack format)          |
+| `o`            | Open the selected PR in your default browser |
+| `r`            | Refresh                                      |
+| `q` / Ctrl+C   | Quit                                         |
