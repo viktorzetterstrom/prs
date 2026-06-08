@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/viktorzetterstrom/prs/github"
 )
 
@@ -50,10 +51,27 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 
 	pr := i.pr
-	stats := statsStyle.Render(fmt.Sprintf("(+%d/-%d)", pr.Additions, pr.Deletions))
-	number := numberStyle.Render(fmt.Sprintf("[#%d]", pr.Number))
+	statsRaw := fmt.Sprintf("(+%d/-%d)", pr.Additions, pr.Deletions)
+	numberRaw := fmt.Sprintf("[#%d]", pr.Number)
 	statusEmoji := pr.StatusEmoji()
-	str := fmt.Sprintf("%s %s %s %s", stats, pr.Title, number, statusEmoji)
+
+	// Budget the title so the right-hand status emoji is always visible. The
+	// selected and unselected rows both consume 4 cells before content (4
+	// spaces of padding, or 2 spaces + "➤ "), and 3 single-space separators
+	// sit between the four content segments. Leave 1 trailing cell as
+	// breathing room — some terminals half-clip a 2-cell emoji sitting at the
+	// very last column.
+	title := pr.Title
+	if listWidth := m.Width(); listWidth > 0 {
+		fixed := 4 + ansi.StringWidth(statsRaw) + ansi.StringWidth(numberRaw) + ansi.StringWidth(statusEmoji) + 3 + 1
+		if budget := listWidth - fixed; budget > 0 && ansi.StringWidth(title) > budget {
+			title = ansi.Truncate(title, budget, "…")
+		}
+	}
+
+	stats := statsStyle.Render(statsRaw)
+	number := numberStyle.Render(numberRaw)
+	str := fmt.Sprintf("%s %s %s %s", stats, title, number, statusEmoji)
 
 	fn := itemStyle.Render
 	if index == m.Index() {
@@ -311,7 +329,7 @@ func (m model) View() string {
 	return m.renderTabs() + "\n" + body + footer.String()
 }
 
-func Run(initial github.QueryKind) error {
+func Run() error {
 	const defaultWidth = 80
 	const listHeight = 16
 
@@ -329,15 +347,8 @@ func Run(initial github.QueryKind) error {
 		{kind: github.QueryActive},
 		{kind: github.QueryLastWeek},
 	}
-	active := 0
-	for i, v := range views {
-		if v.kind == initial {
-			active = i
-			break
-		}
-	}
 
-	m := model{list: l, views: views, active: active}
+	m := model{list: l, views: views, active: 0}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
