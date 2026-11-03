@@ -3,7 +3,6 @@ package ui
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os/exec"
 	"runtime"
 	"slices"
@@ -11,7 +10,6 @@ import (
 	"time"
 
 	"github.com/atotto/clipboard"
-	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -25,11 +23,9 @@ const refreshInterval = 30 * time.Second
 var (
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("255"))
-	paginationStyle   = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
-	helpStyle         = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1)
 	numberStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("33"))
 	statsStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	repoStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	emptyStyle        = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("241")).Italic(true)
 	copiedStyle       = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("10")).Bold(true)
 	timestampStyle    = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("241"))
 	errorStyle        = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("9")).Bold(true)
@@ -43,69 +39,37 @@ var (
 	welcomeStyle      = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("250"))
 )
 
-type item struct {
-	pr       github.PR
-	showRepo bool
+// listRow is one line of the PR list: a repo heading, a PR, or an "empty
+// repo" note. Only PR rows are selectable; prIndex indexes model.ordered.
+type listRow struct {
+	heading string
+	prIndex int
+	empty   bool
+	spacer  bool
 }
 
-func (i item) FilterValue() string { return i.pr.Title }
-
-type itemDelegate struct{}
-
-func (d itemDelegate) Height() int                             { return 1 }
-func (d itemDelegate) Spacing() int                            { return 0 }
-func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
-func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	i, ok := listItem.(item)
-	if !ok {
-		return
-	}
-
-	pr := i.pr
+// renderPR draws one PR line. The title is truncated so the trailing PR
+// number is always visible: both the selected and unselected rows consume 4
+// cells before content (4 spaces of padding, or 2 spaces + "➤ "), two
+// single-space separators sit between the three segments, and 1 trailing
+// cell is left as breathing room.
+func renderPR(pr github.PR, selected bool, width int) string {
 	statsRaw := fmt.Sprintf("(+%d/-%d)", pr.Additions, pr.Deletions)
 	numberRaw := fmt.Sprintf("[#%d]", pr.Number)
 
-	// The repo tag is only shown when more than one repo is tracked, so the
-	// single-repo layout is unchanged.
-	repoRaw := ""
-	if i.showRepo {
-		repoRaw = pr.ShortRepo()
-	}
-
-	// Budget the title so the right-hand PR number is always visible. The
-	// selected and unselected rows both consume 4 cells before content (4
-	// spaces of padding, or 2 spaces + "➤ "), and one single-space separator
-	// sits between each pair of content segments. Leave 1 trailing cell as
-	// breathing room.
 	title := pr.Title
-	if listWidth := m.Width(); listWidth > 0 {
-		separators := 2
-		fixed := 4 + ansi.StringWidth(statsRaw) + ansi.StringWidth(numberRaw) + 1
-		if repoRaw != "" {
-			separators++
-			fixed += ansi.StringWidth(repoRaw)
-		}
-		fixed += separators
-		if budget := listWidth - fixed; budget > 0 && ansi.StringWidth(title) > budget {
+	if width > 0 {
+		fixed := 4 + ansi.StringWidth(statsRaw) + ansi.StringWidth(numberRaw) + 2 + 1
+		if budget := width - fixed; budget > 0 && ansi.StringWidth(title) > budget {
 			title = ansi.Truncate(title, budget, "…")
 		}
 	}
 
-	segments := []string{statsStyle.Render(statsRaw)}
-	if repoRaw != "" {
-		segments = append(segments, repoStyle.Render(repoRaw))
+	str := statsStyle.Render(statsRaw) + " " + title + " " + numberStyle.Render(numberRaw)
+	if selected {
+		return selectedItemStyle.Render("➤ " + str)
 	}
-	segments = append(segments, title, numberStyle.Render(numberRaw))
-	str := strings.Join(segments, " ")
-
-	fn := itemStyle.Render
-	if index == m.Index() {
-		fn = func(s ...string) string {
-			return selectedItemStyle.Render("➤ " + strings.Join(s, " "))
-		}
-	}
-
-	fmt.Fprint(w, fn(str))
+	return itemStyle.Render(str)
 }
 
 type tickMsg time.Time
@@ -146,10 +110,17 @@ const (
 )
 
 type model struct {
-	list    list.Model
 	view    viewState
 	copied  bool
 	openErr error
+
+	// ordered is view.prs regrouped by tracked repo (in m.repos order), and
+	// rows is the rendered structure over it. cursor indexes ordered.
+	ordered []github.PR
+	rows    []listRow
+	cursor  int
+	width   int
+	height  int
 
 	// repos is the effective list of tracked repositories. It starts from the
 	// config file, falling back to the current directory's repo when the
@@ -254,17 +225,49 @@ func formatTimeAgo(t time.Time) string {
 	}
 }
 
+// syncList regroups the fetched PRs by repo. With several repos tracked each
+// repo gets a heading (in tracked order) and repos with nothing open say so;
+// with one repo the list is flat. The cursor is clamped to the new length.
 func (m *model) syncList() {
-	items := make([]list.Item, len(m.view.prs))
-	for i, pr := range m.view.prs {
-		items[i] = item{pr: pr, showRepo: m.multiRepo()}
+	m.ordered = m.ordered[:0]
+	m.rows = m.rows[:0]
+
+	if !m.multiRepo() {
+		for _, pr := range m.view.prs {
+			m.rows = append(m.rows, listRow{prIndex: len(m.ordered)})
+			m.ordered = append(m.ordered, pr)
+		}
+	} else {
+		for i, repo := range m.repos {
+			if i > 0 {
+				m.rows = append(m.rows, listRow{spacer: true})
+			}
+			m.rows = append(m.rows, listRow{heading: github.PR{Repo: repo}.ShortRepo()})
+			found := false
+			for _, pr := range m.view.prs {
+				if pr.Repo != repo {
+					continue
+				}
+				found = true
+				m.rows = append(m.rows, listRow{prIndex: len(m.ordered)})
+				m.ordered = append(m.ordered, pr)
+			}
+			if !found {
+				m.rows = append(m.rows, listRow{empty: true})
+			}
+		}
 	}
-	m.list.SetItems(items)
-	if len(m.view.prs) == 0 {
-		m.list.Select(0)
-	} else if m.list.Index() >= len(m.view.prs) {
-		m.list.Select(len(m.view.prs) - 1)
+
+	if m.cursor >= len(m.ordered) {
+		m.cursor = max(0, len(m.ordered)-1)
 	}
+}
+
+func (m model) selectedPR() (github.PR, bool) {
+	if m.cursor < 0 || m.cursor >= len(m.ordered) {
+		return github.PR{}, false
+	}
+	return m.ordered[m.cursor], true
 }
 
 func (m *model) ensureLoaded() tea.Cmd {
@@ -433,7 +436,8 @@ func (m model) updateAddRepo(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.list.SetWidth(msg.Width)
+		m.width = msg.Width
+		m.height = msg.Height
 		return m, nil
 
 	case tickMsg:
@@ -501,9 +505,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+			m.copied = false
+			m.openErr = nil
+			return m, nil
+
+		case "down", "j":
+			if m.cursor < len(m.ordered)-1 {
+				m.cursor++
+			}
+			m.copied = false
+			m.openErr = nil
+			return m, nil
+
 		case " ", "enter":
-			if len(m.view.prs) > 0 && m.list.Index() < len(m.view.prs) {
-				selectedPR := m.view.prs[m.list.Index()]
+			if selectedPR, ok := m.selectedPR(); ok {
 				formatted := selectedPR.FormatForSlack(m.multiRepo())
 				if err := clipboard.WriteAll(formatted); err == nil {
 					m.copied = true
@@ -515,9 +534,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "o":
-			if len(m.view.prs) > 0 && m.list.Index() < len(m.view.prs) {
+			if pr, ok := m.selectedPR(); ok {
 				m.openErr = nil
-				return m, openInBrowser(m.view.prs[m.list.Index()].URL)
+				return m, openInBrowser(pr.URL)
 			}
 			return m, nil
 
@@ -535,9 +554,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	var cmd tea.Cmd
-	m.list, cmd = m.list.Update(msg)
-	return m, cmd
+	return m, nil
 }
 
 // hints renders a key legend like "↑/↓ move · enter copy · q quit".
@@ -640,7 +657,7 @@ func (m model) View() string {
 	case len(v.prs) == 0:
 		body = itemStyle.Render("No open pull requests.")
 	default:
-		body = m.list.View()
+		body = m.renderRows()
 	}
 
 	var footer strings.Builder
@@ -661,7 +678,53 @@ func (m model) View() string {
 	}
 	footer.WriteString("\n\n" + hints("↑/↓", "move", "enter", "copy for Slack", "o", "open", "r", "refresh", "c", "repos", "q", "quit"))
 
-	return m.renderHeader() + "\n" + body + footer.String()
+	return m.renderHeader() + "\n" + body + "\n" + footer.String()
+}
+
+// renderRows draws the grouped list, scrolled so the selected PR is visible.
+// The window height is the terminal height minus the header, footer and key
+// legend; before the first WindowSizeMsg a 16-line window is used.
+func (m model) renderRows() string {
+	lines := make([]string, len(m.rows))
+	selectedLine := 0
+	for i, row := range m.rows {
+		switch {
+		case row.spacer:
+			lines[i] = ""
+		case row.heading != "":
+			lines[i] = sectionStyle.Render(row.heading)
+		case row.empty:
+			lines[i] = emptyStyle.Render("no open pull requests")
+		default:
+			selected := row.prIndex == m.cursor
+			if selected {
+				selectedLine = i
+			}
+			lines[i] = renderPR(m.ordered[row.prIndex], selected, m.width)
+		}
+	}
+
+	window := 16
+	if m.height > 0 {
+		// header (2 lines) + blank + timestamp + blank + hints (~5) → keep a margin.
+		window = max(3, m.height-8)
+	}
+	start := 0
+	if len(lines) > window {
+		// Keep the selection roughly centred once the list scrolls.
+		start = min(max(0, selectedLine-window/2), len(lines)-window)
+		// Do not open on an orphaned heading's content: if the window starts
+		// right after a heading, pull the heading in.
+		if start > 0 && m.rows[start-1].heading != "" {
+			start--
+		}
+		// And never open on the spacer above a heading.
+		if start < len(m.rows) && m.rows[start].spacer {
+			start++
+		}
+	}
+	end := min(len(lines), start+window)
+	return strings.Join(lines[start:end], "\n")
 }
 
 func indent(s string, n int) string {
@@ -694,19 +757,6 @@ func resolveRepos(currentRepo string) (repos []string, configExists bool, err er
 // directory's repo is pre-tracked by resolveRepos on a first run, so it shows
 // under "Current directory" rather than "Saved".
 func newModel(repos []string, currentRepo string, firstRun bool) model {
-	const defaultWidth = 80
-	const listHeight = 16
-
-	l := list.New(nil, itemDelegate{}, defaultWidth, listHeight)
-	l.Title = ""
-	l.SetShowTitle(false)
-	l.SetShowStatusBar(false)
-	l.SetFilteringEnabled(false)
-	l.SetShowHelp(false)
-	l.SetShowPagination(false)
-	l.Styles.PaginationStyle = paginationStyle
-	l.Styles.HelpStyle = helpStyle
-
 	ti := textinput.New()
 	ti.Placeholder = "owner/repo"
 	ti.CharLimit = 200
@@ -718,7 +768,7 @@ func newModel(repos []string, currentRepo string, firstRun bool) model {
 	}
 
 	m := model{
-		list:        l,
+		width:       80,
 		repos:       repos,
 		savedRepos:  saved,
 		currentRepo: currentRepo,

@@ -309,7 +309,7 @@ func TestLeavingConfigAfterChangeRefetches(t *testing.T) {
 		t.Fatal("refresh result for current gen should populate the view")
 	}
 	if !strings.Contains(m.View(), "platform") || !strings.Contains(m.View(), "config") {
-		t.Fatalf("multi-repo view should show repo tags:\n%s", m.View())
+		t.Fatalf("multi-repo view should show a heading per repo:\n%s", m.View())
 	}
 }
 
@@ -355,3 +355,75 @@ type strErr string
 
 func (e strErr) Error() string { return string(e) }
 func errorf(s string) error    { return strErr(s) }
+
+func TestListGroupsByRepoWithHeadings(t *testing.T) {
+	m := newTestModel(t, []string{"a/platform", "a/config", "a/empty"}, "")
+	now := time.Now()
+	m, _ = send(m, refreshMsg{prs: []github.PR{
+		// GetPRs delivers newest-first across repos; grouping must regroup by
+		// repo while keeping that recency order inside each group.
+		{Number: 3, Title: "cfg newest", Repo: "a/config", UpdatedAt: now},
+		{Number: 2, Title: "plat newer", Repo: "a/platform", UpdatedAt: now.Add(-time.Hour)},
+		{Number: 1, Title: "plat older", Repo: "a/platform", UpdatedAt: now.Add(-2 * time.Hour)},
+	}})
+
+	v := m.View()
+	for _, want := range []string{"platform", "config", "empty", "no open pull requests"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("missing %q:\n%s", want, v)
+		}
+	}
+	// Headings follow tracked order and PRs sit under their own heading.
+	ip, ic, ie := strings.Index(v, "platform"), strings.Index(v, "config"), strings.Index(v, "empty")
+	i1, i2, i3 := strings.Index(v, "[#1]"), strings.Index(v, "[#2]"), strings.Index(v, "[#3]")
+	if !(ip < i2 && i2 < i1 && i1 < ic && ic < i3 && i3 < ie) {
+		t.Fatalf("rows out of order:\n%s", v)
+	}
+	if strings.Contains(v, "platform plat") {
+		t.Fatalf("per-row repo tag should be gone once grouped:\n%s", v)
+	}
+
+	// Cursor walks PRs only, skipping headings and empty notes.
+	if pr, _ := m.selectedPR(); pr.Number != 2 {
+		t.Fatalf("first selectable PR should be #2, got #%d", pr.Number)
+	}
+	m, _ = send(m, key("down"), key("down"), key("down"))
+	if pr, _ := m.selectedPR(); pr.Number != 3 {
+		t.Fatalf("cursor should stop on the last PR (#3), got #%d", pr.Number)
+	}
+	if !strings.Contains(m.View(), "➤ ") || strings.Count(m.View(), "➤ ") != 1 {
+		t.Fatalf("exactly one row should be selected:\n%s", m.View())
+	}
+}
+
+func TestSingleRepoListIsFlat(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "")
+	m, _ = send(m, refreshMsg{prs: []github.PR{{Number: 1, Title: "x", Repo: "a/one"}}})
+	v := m.View()
+	if strings.Contains(v, "one\n") && strings.Count(v, "one") > 1 {
+		t.Fatalf("single repo should not get a heading:\n%s", v)
+	}
+	if !strings.Contains(v, "[#1]") {
+		t.Fatalf("PR should be listed:\n%s", v)
+	}
+}
+
+func TestScrollWindowKeepsSelectionVisible(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "")
+	m, _ = send(m, tea.WindowSizeMsg{Width: 80, Height: 14}) // window = 6 lines
+	var prs []github.PR
+	for i := 1; i <= 20; i++ {
+		prs = append(prs, github.PR{Number: i, Title: "pr", Repo: "a/one"})
+	}
+	m, _ = send(m, refreshMsg{prs: prs})
+	for i := 0; i < 19; i++ {
+		m, _ = send(m, key("down"))
+	}
+	v := m.View()
+	if !strings.Contains(v, "➤ ") || !strings.Contains(v, "[#20]") {
+		t.Fatalf("last PR should be selected and visible after scrolling:\n%s", v)
+	}
+	if strings.Contains(v, "[#1]") {
+		t.Fatalf("top of list should have scrolled out of view:\n%s", v)
+	}
+}

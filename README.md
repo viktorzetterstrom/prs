@@ -53,7 +53,7 @@ The list is saved to `~/.config/prs/config.json` (or `$XDG_CONFIG_HOME/prs/confi
 }
 ```
 
-When more than one repo is tracked, each row shows the repo name and the merged list is sorted by last update. The copied Slack line then links as `repo#123` instead of a bare `#123`. Each repo is fetched in parallel; if one fails, the others still show and the error appears in the footer.
+When more than one repo is tracked, the list is grouped under one heading per repo (in the order you track them), newest update first within each group. The copied Slack line then links as `repo#123` instead of a bare `#123`. Each repo is fetched in parallel; if one fails, the others still show and the error appears in the footer.
 
 ## Keybindings
 
