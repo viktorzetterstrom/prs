@@ -747,7 +747,7 @@ func (m model) View() string {
 	timestamp := ""
 	switch {
 	case v.loading && v.loaded:
-		timestamp = timestampStyle.Render(m.spinner.View() + "refreshing…")
+		timestamp = timestampStyle.Render(m.spinner.View())
 	case v.loaded:
 		timestamp = timestampStyle.Render(formatTimeAgo(v.lastUpdated))
 	}
@@ -864,7 +864,7 @@ func newModel(repos []string, currentRepo string, firstRun bool) model {
 	// on the line instead of the tall rotating braille block.
 	sp.Spinner = spinner.Spinner{
 		Frames: []string{"●∙∙", "∙●∙", "∙∙●", "∙●∙"},
-		FPS:    time.Second / 8,
+		FPS:    time.Second / 5,
 	}
 	// Dim grey so the spinner reads as a quiet placeholder, not a highlight.
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
