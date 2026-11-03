@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/atotto/clipboard"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -141,6 +142,7 @@ type model struct {
 	cfgDirty  bool
 	cfgErr    error
 	input     textinput.Model
+	spinner   spinner.Model
 	// savedRepos is the "saved" section of the picker: the repos in the
 	// config at startup plus anything added by name since. It is a frozen
 	// snapshot so untracking a repo leaves its row in place.
@@ -184,12 +186,16 @@ func fetchSuggestions() tea.Msg {
 	return suggestMsg{repos: repos, err: err}
 }
 
+// busy reports whether anything is in flight, which is when the spinner
+// animates. Spinner ticks are dropped once nothing is loading.
+func (m model) busy() bool { return m.view.loading || m.suggestLoading }
+
 func (m *model) startFetch() tea.Cmd {
 	if len(m.repos) == 0 {
 		return nil
 	}
 	m.view.loading = true
-	return fetchPRs(m.repos, m.gen)
+	return tea.Batch(fetchPRs(m.repos, m.gen), m.spinner.Tick)
 }
 
 func (m *model) ensureSuggestions() tea.Cmd {
@@ -197,7 +203,7 @@ func (m *model) ensureSuggestions() tea.Cmd {
 		return nil
 	}
 	m.suggestLoading = true
-	return fetchSuggestions
+	return tea.Batch(fetchSuggestions, m.spinner.Tick)
 }
 
 func (m model) Init() tea.Cmd {
@@ -477,6 +483,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 
+	case spinner.TickMsg:
+		if !m.busy() {
+			// Nothing loading: let this tick chain die.
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
 	case tickMsg:
 		cmds := []tea.Cmd{tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })}
 		v := &m.view
@@ -642,7 +657,7 @@ func (m model) viewConfig() string {
 
 	switch {
 	case m.suggestLoading:
-		b.WriteString("\n" + timestampStyle.Render("looking up repos you've opened prs in…"))
+		b.WriteString("\n" + timestampStyle.Render(m.spinner.View()+"looking up repos you've opened prs in…"))
 		b.WriteString("\n")
 	case m.suggestErr != nil:
 		b.WriteString("\n" + errorStyle.Render(fmt.Sprintf("⚠ could not load suggestions: %v", m.suggestErr)))
@@ -683,7 +698,7 @@ func (m model) View() string {
 	case len(m.repos) == 0:
 		body = itemStyle.Render("no repos tracked yet. press c to pick some.")
 	case v.loading && !v.loaded:
-		body = itemStyle.Render("loading…")
+		body = m.renderLoading()
 	case v.err != nil && !v.loaded:
 		body = errorStyle.Render(fmt.Sprintf("⚠ could not load prs:\n%v", indent(v.err.Error(), 2)))
 	case len(v.prs) == 0:
@@ -711,7 +726,7 @@ func (m model) View() string {
 	timestamp := ""
 	switch {
 	case v.loading && v.loaded:
-		timestamp = timestampStyle.Render("refreshing…")
+		timestamp = timestampStyle.Render(m.spinner.View() + "refreshing…")
 	case v.loaded:
 		timestamp = timestampStyle.Render(formatTimeAgo(v.lastUpdated))
 	}
@@ -732,6 +747,26 @@ func (m model) windowHeight() int {
 
 // pageSize is how far PgUp/PgDn move: half a window, like less/vim.
 func (m model) pageSize() int { return max(1, m.windowHeight()/2) }
+
+// renderLoading is the startup skeleton: the same headings the loaded list
+// will have, each with a spinner line beneath, so nothing jumps when the
+// results arrive. With a single repo it is one spinner line.
+func (m model) renderLoading() string {
+	line := itemStyle.Render(m.spinner.View() + "loading open prs…")
+	if !m.multiRepo() {
+		return line
+	}
+	var b strings.Builder
+	for i, repo := range m.repos {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(sectionStyle.Render(github.PR{Repo: repo}.ShortRepo()))
+		b.WriteString("\n")
+		b.WriteString(line)
+	}
+	return b.String()
+}
 
 // renderRows draws the grouped list, scrolled so the selected PR is visible.
 func (m model) renderRows() string {
@@ -803,6 +838,10 @@ func resolveRepos(currentRepo string) (repos []string, configExists bool, err er
 // directory's repo is pre-tracked by resolveRepos on a first run, so it shows
 // under "current directory" rather than "saved".
 func newModel(repos []string, currentRepo string, firstRun bool) model {
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("33"))
+
 	ti := textinput.New()
 	ti.Placeholder = "owner/repo"
 	ti.CharLimit = 200
@@ -819,6 +858,7 @@ func newModel(repos []string, currentRepo string, firstRun bool) model {
 		savedRepos:  saved,
 		currentRepo: currentRepo,
 		input:       ti,
+		spinner:     sp,
 		firstRun:    firstRun,
 	}
 	if m.firstRun {

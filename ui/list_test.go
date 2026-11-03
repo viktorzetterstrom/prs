@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/viktorzetterstrom/prs/config"
 	"github.com/viktorzetterstrom/prs/github"
@@ -53,6 +54,25 @@ func send(m model, msgs ...tea.Msg) (model, tea.Cmd) {
 		m = next.(model)
 	}
 	return m, cmd
+}
+
+// runForRefresh executes cmd, unwrapping tea.Batch, and returns the first
+// refreshMsg it produces.
+func runForRefresh(cmd tea.Cmd) (refreshMsg, bool) {
+	if cmd == nil {
+		return refreshMsg{}, false
+	}
+	switch msg := cmd().(type) {
+	case refreshMsg:
+		return msg, true
+	case tea.BatchMsg:
+		for _, c := range msg {
+			if rm, ok := runForRefresh(c); ok {
+				return rm, true
+			}
+		}
+	}
+	return refreshMsg{}, false
 }
 
 func typeString(m model, s string) model {
@@ -301,10 +321,9 @@ func TestLeavingConfigAfterChangeRefetches(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("leaving config after a change should trigger a fetch")
 	}
-	msg := cmd()
-	rm, ok := msg.(refreshMsg)
+	rm, ok := runForRefresh(cmd)
 	if !ok {
-		t.Fatalf("expected refreshMsg, got %T", msg)
+		t.Fatal("expected a refreshMsg from the leave-config command")
 	}
 	if rm.gen != m.gen {
 		t.Fatalf("fetch gen %d != model gen %d", rm.gen, m.gen)
@@ -561,5 +580,42 @@ func TestFirstRunTogglesAreSavedOnLeave(t *testing.T) {
 	cfg, found, _ := config.Load()
 	if !found || !slices.Equal(cfg.Repos, []string{"a/one", "a/two"}) {
 		t.Fatalf("selection should be saved: %v %v", cfg.Repos, found)
+	}
+}
+
+func TestLoadingSkeletonShowsRepoHeadings(t *testing.T) {
+	m := newTestModel(t, []string{"a/platform", "a/config"}, "")
+	cmd := m.startFetch()
+	if cmd == nil || !m.view.loading {
+		t.Fatal("startFetch should mark the view loading")
+	}
+	v := m.View()
+	for _, want := range []string{"platform", "config", "loading open prs"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("loading skeleton missing %q:\n%s", want, v)
+		}
+	}
+	if strings.Count(v, "loading open prs") != 2 {
+		t.Fatalf("expected one spinner line per repo:\n%s", v)
+	}
+
+	// Spinner ticks animate while loading and stop once the fetch lands.
+	m, tick := send(m, spinner.TickMsg{ID: m.spinner.ID()})
+	if tick == nil {
+		t.Fatal("spinner should keep ticking while loading")
+	}
+	m, _ = send(m, refreshMsg{prs: []github.PR{{Number: 1, Repo: "a/platform"}}})
+	_, tick = send(m, spinner.TickMsg{ID: m.spinner.ID()})
+	if tick != nil {
+		t.Fatal("spinner should stop ticking once nothing is loading")
+	}
+}
+
+func TestSingleRepoLoadingIsOneLine(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "")
+	m.startFetch()
+	v := m.View()
+	if strings.Count(v, "loading open prs") != 1 || strings.Contains(v, "\n  one\n") {
+		t.Fatalf("single repo should show one spinner line and no heading:\n%s", v)
 	}
 }
