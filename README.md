@@ -38,13 +38,12 @@ go install github.com/viktorzetterstrom/prs@latest
 
 The first time you run `prs` it opens the **Tracked repos** picker. Afterwards press `c` to get back to it. It lists every repo `prs` is following, then the repo of the current directory and the repos you have recently authored PRs in (looked up via `gh search prs --author=@me`) as untracked candidates.
 
-| Key                         | Action                                        |
-| --------------------------- | --------------------------------------------- |
-| ↑ / ↓, `j` / `k`            | Move between repos                            |
-| `g` / `G`, Home / End       | Jump to the first / last repo                 |
-| Space                       | Track or untrack the highlighted repo         |
-| `a`                         | Add a repo by typing `OWNER/REPO`             |
-| Enter / Esc / `c`           | Done: back to the PR list (refetches if you changed anything) |
+| Key           | Action                                                        |
+| ------------- | ------------------------------------------------------------- |
+| ↑ / ↓         | Move between repos                                            |
+| Space         | Track or untrack the highlighted repo                         |
+| `a`           | Add a repo by typing `OWNER/REPO`                             |
+| Enter / Esc   | Done: back to the PR list (refetches if you changed anything) |
 
 The list is saved to `~/.config/prs/config.json` (or `$XDG_CONFIG_HOME/prs/config.json`) as soon as you change it, so you can also edit it by hand:
 
@@ -58,13 +57,13 @@ When more than one repo is tracked, the list is grouped under one heading per re
 
 ## Keybindings
 
-| Key                         | Action                                       |
-| --------------------------- | -------------------------------------------- |
-| ↑ / ↓, `j` / `k`            | Navigate the list                            |
-| PgUp / PgDn, Ctrl+U / Ctrl+D | Move half a screen                          |
-| `g` / `G`, Home / End       | Jump to the first / last PR                  |
-| Enter / `y`                 | Copy the selected PR (Slack format)          |
-| `o`                        | Open the selected PR in your default browser |
-| `r`                        | Refresh                                      |
-| `c`                        | Choose which repos to track                  |
-| `q` / Ctrl+C               | Quit                                         |
+| Key          | Action                                       |
+| ------------ | -------------------------------------------- |
+| ↑ / ↓        | Navigate the list                            |
+| Enter        | Copy the selected PR (Slack format)          |
+| `o`          | Open the selected PR in your default browser |
+| `r`          | Refresh                                      |
+| `c`          | Choose which repos to track                  |
+| `q` / Ctrl+C | Quit                                         |
+
+Vim-style aliases also work on both screens: `j` / `k` to move, `g` / `G` (or Home / End) for first / last, PgUp / PgDn (or Ctrl+U / Ctrl+D) for half a page, and `y` to copy.

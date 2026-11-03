@@ -588,7 +588,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// hints renders a key legend like "↑/↓ move · enter copy · q quit".
+// hints renders a key legend like "↑/↓ move · enter copy · q quit". Only the
+// primary key for each action is listed; vim-style aliases (j/k, g/G, y) and
+// paging keys still work but are left to the README to keep the line short.
 func hints(pairs ...string) string {
 	parts := make([]string, 0, len(pairs)/2)
 	for i := 0; i+1 < len(pairs); i += 2 {
@@ -669,7 +671,7 @@ func (m model) viewConfig() string {
 			b.WriteString(errorStyle.Render(fmt.Sprintf("⚠ Could not save config: %v", m.cfgErr)))
 			b.WriteString("\n")
 		}
-		b.WriteString(hints("↑/↓ j/k", "move", "space", "toggle", "a", "add by name", "enter/esc", "done", "q", "quit"))
+		b.WriteString(hints("↑/↓", "move", "space", "toggle", "a", "add by name", "enter", "done", "q", "quit"))
 	}
 	return b.String()
 }
@@ -711,7 +713,7 @@ func (m model) View() string {
 	case v.loaded:
 		footer.WriteString("\n" + timestampStyle.Render(formatTimeAgo(v.lastUpdated)))
 	}
-	footer.WriteString("\n\n" + hints("↑/↓ j/k", "move", "enter/y", "copy for Slack", "o", "open", "r", "refresh", "c", "repos", "q", "quit"))
+	footer.WriteString("\n\n" + hints("↑/↓", "move", "enter", "copy for Slack", "o", "open", "r", "refresh", "c", "repos", "q", "quit"))
 
 	return m.renderHeader() + "\n" + body + "\n" + footer.String()
 }
