@@ -4,20 +4,6 @@ A Go CLI tool to list GitHub pull requests and copy formatted PR info to your cl
 
 It shows your open PRs across the repos you choose to track and auto-refreshes every 30s. A key legend at the bottom of every screen shows what you can do.
 
-## Status emojis
-
-| Emoji | Meaning                                      |
-| ----- | -------------------------------------------- |
-| 📝    | Draft                                        |
-| ⚠️    | Merge conflict — needs a rebase              |
-| ❌    | CI is failing                                |
-| 💬    | Reviewer requested changes                   |
-| ✅    | Approved — ready to merge                    |
-| 👀    | Waiting on a reviewer                        |
-| 🟢    | Open, nothing flagged                        |
-
-Priority order: the first matching state wins (so an approved PR with failing CI shows ❌, because that's the actionable thing).
-
 ## Prerequisites
 
 - **The [`gh` CLI](https://cli.github.com/)** — `prs` shells out to `gh pr list`, so it has to be installed and authenticated:

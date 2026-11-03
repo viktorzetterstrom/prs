@@ -240,6 +240,9 @@ func (pr PR) ciStatus() string {
 	return "SUCCESS"
 }
 
+// StatusEmoji summarises the PR's state as a single emoji. It is not shown in
+// the list at the moment but kept (with ciStatus and the JSON fields it
+// reads) so the indicator can come back without re-deriving the rules.
 func (pr PR) StatusEmoji() string {
 	switch pr.State {
 	case "MERGED":

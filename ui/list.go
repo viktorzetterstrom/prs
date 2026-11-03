@@ -64,7 +64,6 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	pr := i.pr
 	statsRaw := fmt.Sprintf("(+%d/-%d)", pr.Additions, pr.Deletions)
 	numberRaw := fmt.Sprintf("[#%d]", pr.Number)
-	statusEmoji := pr.StatusEmoji()
 
 	// The repo tag is only shown when more than one repo is tracked, so the
 	// single-repo layout is unchanged.
@@ -73,16 +72,15 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		repoRaw = pr.ShortRepo()
 	}
 
-	// Budget the title so the right-hand status emoji is always visible. The
+	// Budget the title so the right-hand PR number is always visible. The
 	// selected and unselected rows both consume 4 cells before content (4
 	// spaces of padding, or 2 spaces + "➤ "), and one single-space separator
 	// sits between each pair of content segments. Leave 1 trailing cell as
-	// breathing room — some terminals half-clip a 2-cell emoji sitting at the
-	// very last column.
+	// breathing room.
 	title := pr.Title
 	if listWidth := m.Width(); listWidth > 0 {
-		separators := 3
-		fixed := 4 + ansi.StringWidth(statsRaw) + ansi.StringWidth(numberRaw) + ansi.StringWidth(statusEmoji) + 1
+		separators := 2
+		fixed := 4 + ansi.StringWidth(statsRaw) + ansi.StringWidth(numberRaw) + 1
 		if repoRaw != "" {
 			separators++
 			fixed += ansi.StringWidth(repoRaw)
@@ -97,7 +95,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if repoRaw != "" {
 		segments = append(segments, repoStyle.Render(repoRaw))
 	}
-	segments = append(segments, title, numberStyle.Render(numberRaw), statusEmoji)
+	segments = append(segments, title, numberStyle.Render(numberRaw))
 	str := strings.Join(segments, " ")
 
 	fn := itemStyle.Render
