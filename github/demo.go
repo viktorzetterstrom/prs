@@ -1,8 +1,25 @@
 package github
 
+import "time"
+
 // demoPRs returns canned data for the --demo flag. Each entry is designed to
 // exercise a distinct branch of StatusEmoji so the TUI shows every state.
-func demoPRs(kind QueryKind) []PR {
+// The set is split across DemoRepos by PR number parity so the multi-repo
+// view interleaves rows from both.
+func demoPRs(kind QueryKind, repo string) []PR {
+	all := demoAll(kind)
+	var out []PR
+	for i, pr := range all {
+		if DemoRepos[pr.Number%len(DemoRepos)] != repo {
+			continue
+		}
+		pr.UpdatedAt = time.Now().Add(-time.Duration(i) * time.Hour)
+		out = append(out, pr)
+	}
+	return out
+}
+
+func demoAll(kind QueryKind) []PR {
 	open := []PR{
 		{
 			Number: 142, Title: "Approved, ready to merge",
