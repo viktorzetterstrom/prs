@@ -605,7 +605,7 @@ func (m model) renderHeader() string {
 
 func (m model) viewConfig() string {
 	var b strings.Builder
-	b.WriteString(headerStyle.Render(titleStyle.Render("Tracked repos")))
+	b.WriteString(headerStyle.Render(titleStyle.Render("Config")))
 	b.WriteString("\n")
 
 	if m.firstRun {
@@ -713,7 +713,7 @@ func (m model) View() string {
 	case v.loaded:
 		footer.WriteString("\n" + timestampStyle.Render(formatTimeAgo(v.lastUpdated)))
 	}
-	footer.WriteString("\n\n" + hints("↑/↓", "move", "enter", "copy for Slack", "o", "open", "r", "refresh", "c", "repos", "q", "quit"))
+	footer.WriteString("\n\n" + hints("↑/↓", "move", "enter", "copy for Slack", "o", "open", "r", "refresh", "c", "config", "q", "quit"))
 
 	return m.renderHeader() + "\n" + body + "\n" + footer.String()
 }

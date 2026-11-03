@@ -75,7 +75,7 @@ func TestNoReposShowsHint(t *testing.T) {
 func TestListShowsKeyHints(t *testing.T) {
 	m := newTestModel(t, []string{"a/one"}, "")
 	v := m.View()
-	for _, want := range []string{"copy for Slack", "open", "refresh", "repos", "quit"} {
+	for _, want := range []string{"copy for Slack", "open", "refresh", "config", "quit"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("hint %q missing from list view:\n%s", want, v)
 		}
@@ -95,7 +95,7 @@ func TestOpeningConfigRequestsSuggestionsOnce(t *testing.T) {
 		t.Fatal("entering config should kick off a suggestion fetch")
 	}
 	v := m.View()
-	if !strings.Contains(v, "Tracked repos") {
+	if !strings.Contains(v, "Config") {
 		t.Fatalf("expected config title, got:\n%s", v)
 	}
 	if !strings.Contains(v, "✓ sanalabs/sierra-platform") {

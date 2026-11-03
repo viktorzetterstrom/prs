@@ -36,7 +36,7 @@ go install github.com/viktorzetterstrom/prs@latest
 
 ## Tracking repos
 
-The first time you run `prs` it opens the **Tracked repos** picker. Afterwards press `c` to get back to it. It lists every repo `prs` is following, then the repo of the current directory and the repos you have recently authored PRs in (looked up via `gh search prs --author=@me`) as untracked candidates.
+The first time you run `prs` it opens the **Config** screen. Afterwards press `c` to get back to it. It lists every repo `prs` is following, then the repo of the current directory and the repos you have recently authored PRs in (looked up via `gh search prs --author=@me`) as untracked candidates.
 
 | Key           | Action                                                        |
 | ------------- | ------------------------------------------------------------- |
@@ -63,7 +63,7 @@ When more than one repo is tracked, the list is grouped under one heading per re
 | Enter        | Copy the selected PR (Slack format)          |
 | `o`          | Open the selected PR in your default browser |
 | `r`          | Refresh                                      |
-| `c`          | Choose which repos to track                  |
+| `c`          | Open the config (choose which repos to track) |
 | `q` / Ctrl+C | Quit                                         |
 
 Vim-style aliases also work on both screens: `j` / `k` to move, `g` / `G` (or Home / End) for first / last, PgUp / PgDn (or Ctrl+U / Ctrl+D) for half a page, and `y` to copy.
