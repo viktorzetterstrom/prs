@@ -522,3 +522,57 @@ func TestSpaceDoesNotCopyInList(t *testing.T) {
 		t.Fatal("space is reserved for toggling on the picker; copy is enter/y")
 	}
 }
+
+func TestCopiedMessageDoesNotShiftLayout(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "")
+	m, _ = send(m, refreshMsg{prs: []github.PR{{Number: 1, Title: "x", Repo: "a/one", URL: "u"}}})
+	before := m.View()
+	m.copied = true
+	after := m.View()
+	if strings.Count(before, "\n") != strings.Count(after, "\n") {
+		t.Fatalf("copied message changed the line count:\n--- before\n%s\n--- after\n%s", before, after)
+	}
+	if !strings.Contains(after, "Copied to clipboard") {
+		t.Fatal("copied message missing")
+	}
+	hintLine := func(v string) int {
+		lines := strings.Split(v, "\n")
+		for i, l := range lines {
+			if strings.Contains(l, "copy for Slack") {
+				return i
+			}
+		}
+		return -1
+	}
+	if hintLine(before) != hintLine(after) {
+		t.Fatalf("key legend moved from line %d to %d", hintLine(before), hintLine(after))
+	}
+}
+
+func TestWelcomeStaysUntilFirstRunPickerIsLeft(t *testing.T) {
+	m := newFirstRunModel(t, nil, "")
+	m, _ = send(m, suggestMsg{repos: []string{"a/one", "a/two"}})
+	if !strings.Contains(m.View(), "Welcome!") {
+		t.Fatal("welcome should show on first run")
+	}
+	m, _ = send(m, key(" ")) // track a/one
+	if !strings.Contains(m.View(), "Welcome!") {
+		t.Fatalf("welcome must stay after the first toggle:\n%s", m.View())
+	}
+	m, _ = send(m, key("down"), key(" ")) // track a/two
+	if !strings.Contains(m.View(), "Welcome!") {
+		t.Fatal("welcome must stay after further toggles")
+	}
+	m, _ = send(m, key("esc"))
+	if m.firstRun {
+		t.Fatal("firstRun should clear once the picker is left with a selection")
+	}
+	m, _ = send(m, key("c"))
+	if strings.Contains(m.View(), "Welcome!") {
+		t.Fatal("welcome should not return on later visits")
+	}
+	cfg, found, _ := config.Load()
+	if !found || !slices.Equal(cfg.Repos, []string{"a/one", "a/two"}) {
+		t.Fatalf("selection should be saved: %v %v", cfg.Repos, found)
+	}
+}

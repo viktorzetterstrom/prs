@@ -281,13 +281,9 @@ func (m *model) saveConfig() {
 	if github.DemoMode {
 		// Demo mode must never touch the real config file; the in-memory
 		// repo list still changes so the UI can be exercised.
-		m.firstRun = false
 		return
 	}
 	m.cfgErr = config.Config{Repos: m.repos}.Save()
-	if m.cfgErr == nil {
-		m.firstRun = false
-	}
 }
 
 // applyRepoChange persists the repo list and invalidates the view so the
@@ -364,10 +360,15 @@ func (m model) configRowCount() int { return len(m.configRows()) }
 
 func (m *model) leaveConfig() tea.Cmd {
 	m.mode = modeList
-	if m.firstRun && len(m.repos) > 0 && !m.cfgDirty {
-		// First run, user accepted the preselected repos: persist them so the
-		// picker does not greet them again next time.
-		m.saveConfig()
+	if m.firstRun && len(m.repos) > 0 {
+		if !m.cfgDirty {
+			// User accepted the preselected repos: persist them so the picker
+			// does not greet them again next time.
+			m.saveConfig()
+		}
+		// The welcome text stays up for the whole first visit and only goes
+		// away once the user has left with something selected.
+		m.firstRun = false
 	}
 	if !m.cfgDirty {
 		return m.ensureLoaded()
@@ -697,22 +698,30 @@ func (m model) View() string {
 		body = m.renderRows()
 	}
 
+	// The footer always occupies the same number of lines so transient
+	// messages (copied, browser error) never push the timestamp or the key
+	// legend around. Persistent refresh errors are the one exception: they
+	// are multi-line and stay until the next successful fetch.
 	var footer strings.Builder
-	if m.copied {
-		footer.WriteString("\n" + copiedStyle.Render("✓ Copied to clipboard!"))
-	}
-	if m.openErr != nil {
-		footer.WriteString("\n" + errorStyle.Render(fmt.Sprintf("⚠ Could not open browser: %v", m.openErr)))
-	}
 	if v.err != nil && v.loaded {
 		footer.WriteString("\n" + errorStyle.Render(fmt.Sprintf("⚠ Refresh failed:\n%v", indent(v.err.Error(), 2))))
 	}
+	status := ""
+	switch {
+	case m.copied:
+		status = copiedStyle.Render("✓ Copied to clipboard!")
+	case m.openErr != nil:
+		status = errorStyle.Render(fmt.Sprintf("⚠ Could not open browser: %v", m.openErr))
+	}
+	footer.WriteString("\n" + status)
+	timestamp := ""
 	switch {
 	case v.loading && v.loaded:
-		footer.WriteString("\n" + timestampStyle.Render("Refreshing…"))
+		timestamp = timestampStyle.Render("Refreshing…")
 	case v.loaded:
-		footer.WriteString("\n" + timestampStyle.Render(formatTimeAgo(v.lastUpdated)))
+		timestamp = timestampStyle.Render(formatTimeAgo(v.lastUpdated))
 	}
+	footer.WriteString("\n" + timestamp)
 	footer.WriteString("\n\n" + hints("↑/↓", "move", "enter", "copy for Slack", "o", "open", "r", "refresh", "c", "config", "q", "quit"))
 
 	return m.renderHeader() + "\n" + body + "\n" + footer.String()
