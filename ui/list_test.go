@@ -23,7 +23,6 @@ func newTestModel(t *testing.T, repos []string, currentRepo string) model {
 	l.SetShowPagination(false)
 	return model{
 		list:        l,
-		views:       []*viewState{{kind: github.QueryActive}, {kind: github.QueryLastWeek}},
 		repos:       repos,
 		currentRepo: currentRepo,
 		input:       textinput.New(),
@@ -63,7 +62,7 @@ func typeString(m model, s string) model {
 
 func TestNoReposShowsHint(t *testing.T) {
 	m := newTestModel(t, nil, "")
-	if !strings.Contains(m.View(), "No repos tracked. Press c to add one.") {
+	if !strings.Contains(m.View(), "No repos tracked yet. Press c to pick some.") {
 		t.Fatalf("expected empty-state hint, got:\n%s", m.View())
 	}
 	if cmd := m.Init(); cmd == nil {
@@ -71,9 +70,25 @@ func TestNoReposShowsHint(t *testing.T) {
 	}
 }
 
-func TestConfigScreenShowsCurrentRepoAsCandidate(t *testing.T) {
+func TestListShowsKeyHints(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "")
+	v := m.View()
+	for _, want := range []string{"copy for Slack", "open", "refresh", "repos", "quit"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("hint %q missing from list view:\n%s", want, v)
+		}
+	}
+	if !strings.Contains(v, "Open PRs") || !strings.Contains(v, "a/one") {
+		t.Errorf("header should name the tracked repo:\n%s", v)
+	}
+}
+
+func TestOpeningConfigRequestsSuggestionsOnce(t *testing.T) {
 	m := newTestModel(t, []string{"sanalabs/sierra-platform"}, "sanalabs/prs")
-	m, _ = send(m, key("c"))
+	m, cmd := send(m, key("c"))
+	if cmd == nil || !m.suggestLoading {
+		t.Fatal("entering config should kick off a suggestion fetch")
+	}
 	v := m.View()
 	if !strings.Contains(v, "Tracked repos") {
 		t.Fatalf("expected config title, got:\n%s", v)
@@ -84,6 +99,69 @@ func TestConfigScreenShowsCurrentRepoAsCandidate(t *testing.T) {
 	if !strings.Contains(v, "○ sanalabs/prs") || !strings.Contains(v, "(current directory)") {
 		t.Errorf("current repo should appear as unchecked candidate:\n%s", v)
 	}
+	if !strings.Contains(v, "Looking up repos") {
+		t.Errorf("should show suggestion loading state:\n%s", v)
+	}
+
+	m, _ = send(m, suggestMsg{repos: []string{"sanalabs/sierra-platform", "sanalabs/sierra-config"}})
+	v = m.View()
+	if !strings.Contains(v, "○ sanalabs/sierra-config") {
+		t.Errorf("untracked suggestion should be listed unchecked:\n%s", v)
+	}
+	if strings.Count(v, "sierra-platform") != 1 {
+		t.Errorf("tracked repo that is also suggested must not be duplicated:\n%s", v)
+	}
+
+	// Re-entering config must not refetch.
+	m, _ = send(m, key("esc"))
+	m, cmd = send(m, key("c"))
+	if cmd != nil || m.suggestLoading {
+		t.Fatal("suggestions should be fetched once per session")
+	}
+}
+
+func TestFirstRunOpensPickerAndSavesOnLeave(t *testing.T) {
+	m := newTestModel(t, []string{"sanalabs/prs"}, "sanalabs/prs")
+	m.firstRun = true
+	m.mode = modeConfig
+
+	if cmd := m.Init(); cmd == nil {
+		t.Fatal("first-run Init should fetch suggestions")
+	}
+	if !strings.Contains(m.View(), "Welcome!") {
+		t.Fatalf("first run should show welcome text:\n%s", m.View())
+	}
+
+	if _, found, _ := config.Load(); found {
+		t.Fatal("config should not exist before the user leaves the picker")
+	}
+	m, cmd := send(m, key("esc"))
+	if m.mode != modeList {
+		t.Fatalf("expected list mode, got %v", m.mode)
+	}
+	cfg, found, err := config.Load()
+	if err != nil || !found || len(cfg.Repos) != 1 || cfg.Repos[0] != "sanalabs/prs" {
+		t.Fatalf("leaving the first-run picker should persist the preselected repo: %v %v %v", cfg, found, err)
+	}
+	if m.firstRun {
+		t.Fatal("firstRun should clear after save")
+	}
+	if cmd == nil {
+		t.Fatal("leaving the picker should start the PR fetch")
+	}
+}
+
+func TestFirstRunWithNothingSelectedDoesNotSave(t *testing.T) {
+	m := newTestModel(t, nil, "")
+	m.firstRun = true
+	m.mode = modeConfig
+	m, _ = send(m, key("esc"))
+	if _, found, _ := config.Load(); found {
+		t.Fatal("empty selection must not be persisted")
+	}
+	if !strings.Contains(m.View(), "Press c to pick some") {
+		t.Fatalf("expected empty state:\n%s", m.View())
+	}
 }
 
 func TestToggleCandidateAddsRepoAndSavesConfig(t *testing.T) {
@@ -93,7 +171,7 @@ func TestToggleCandidateAddsRepoAndSavesConfig(t *testing.T) {
 	if len(m.repos) != 2 || m.repos[1] != "sanalabs/sierra-config" {
 		t.Fatalf("expected candidate added, repos = %v", m.repos)
 	}
-	cfg, err := config.Load()
+	cfg, _, err := config.Load()
 	if err != nil || len(cfg.Repos) != 2 {
 		t.Fatalf("config not saved: %v %v", cfg, err)
 	}
@@ -108,7 +186,7 @@ func TestToggleTrackedRepoRemovesIt(t *testing.T) {
 	if len(m.repos) != 1 || m.repos[0] != "a/two" {
 		t.Fatalf("expected a/one removed, repos = %v", m.repos)
 	}
-	cfg, _ := config.Load()
+	cfg, _, _ := config.Load()
 	if len(cfg.Repos) != 1 || cfg.Repos[0] != "a/two" {
 		t.Fatalf("config not updated: %v", cfg.Repos)
 	}
@@ -151,9 +229,8 @@ func TestLeavingConfigAfterChangeRefetches(t *testing.T) {
 	t.Cleanup(func() { github.DemoMode = false })
 
 	m := newTestModel(t, []string{"example/platform"}, "")
-	// Simulate a loaded view, then add a repo and leave config.
-	m.views[0].loaded = true
-	m.views[0].prs = []github.PR{{Number: 1, Repo: "example/platform"}}
+	m.view.loaded = true
+	m.view.prs = []github.PR{{Number: 1, Repo: "example/platform"}}
 
 	m, _ = send(m, key("c"), key("a"))
 	m = typeString(m, "example/config")
@@ -162,8 +239,8 @@ func TestLeavingConfigAfterChangeRefetches(t *testing.T) {
 	if m.mode != modeList {
 		t.Fatalf("expected list mode after esc, got %v", m.mode)
 	}
-	if m.views[0].loaded {
-		t.Fatal("views should be invalidated after repo change")
+	if m.view.loaded {
+		t.Fatal("view should be invalidated after repo change")
 	}
 	if cmd == nil {
 		t.Fatal("leaving config after a change should trigger a fetch")
@@ -177,7 +254,7 @@ func TestLeavingConfigAfterChangeRefetches(t *testing.T) {
 		t.Fatalf("fetch gen %d != model gen %d", rm.gen, m.gen)
 	}
 	m, _ = send(m, rm)
-	if !m.views[0].loaded || len(m.views[0].prs) == 0 {
+	if !m.view.loaded || len(m.view.prs) == 0 {
 		t.Fatal("refresh result for current gen should populate the view")
 	}
 	if !strings.Contains(m.View(), "platform") || !strings.Contains(m.View(), "config") {
@@ -188,8 +265,8 @@ func TestLeavingConfigAfterChangeRefetches(t *testing.T) {
 func TestStaleRefreshIsDropped(t *testing.T) {
 	m := newTestModel(t, []string{"a/one"}, "")
 	m.gen = 2
-	m, _ = send(m, refreshMsg{kind: github.QueryActive, gen: 1, prs: []github.PR{{Number: 1}}})
-	if m.views[0].loaded || len(m.views[0].prs) != 0 {
+	m, _ = send(m, refreshMsg{gen: 1, prs: []github.PR{{Number: 1}}})
+	if m.view.loaded || len(m.view.prs) != 0 {
 		t.Fatal("stale refresh should be ignored")
 	}
 }
@@ -197,13 +274,11 @@ func TestStaleRefreshIsDropped(t *testing.T) {
 func TestPartialFailureKeepsResultsAndShowsError(t *testing.T) {
 	m := newTestModel(t, []string{"a/one", "a/two"}, "")
 	m, _ = send(m, refreshMsg{
-		kind: github.QueryActive,
 		prs:  []github.PR{{Number: 7, Title: "ok", Repo: "a/one", UpdatedAt: time.Now()}},
 		errs: []github.RepoError{{Repo: "a/two", Err: errorf("boom")}},
 	})
-	v := m.views[0]
-	if !v.loaded || len(v.prs) != 1 {
-		t.Fatalf("partial failure should still load successful repos: loaded=%v prs=%d", v.loaded, len(v.prs))
+	if !m.view.loaded || len(m.view.prs) != 1 {
+		t.Fatalf("partial failure should still load successful repos: loaded=%v prs=%d", m.view.loaded, len(m.view.prs))
 	}
 	out := m.View()
 	if !strings.Contains(out, "a/two: boom") {
@@ -216,11 +291,8 @@ func TestPartialFailureKeepsResultsAndShowsError(t *testing.T) {
 
 func TestAllReposFailingShowsErrorBody(t *testing.T) {
 	m := newTestModel(t, []string{"a/one"}, "")
-	m, _ = send(m, refreshMsg{
-		kind: github.QueryActive,
-		errs: []github.RepoError{{Repo: "a/one", Err: errorf("nope")}},
-	})
-	if m.views[0].loaded {
+	m, _ = send(m, refreshMsg{errs: []github.RepoError{{Repo: "a/one", Err: errorf("nope")}}})
+	if m.view.loaded {
 		t.Fatal("view should not be marked loaded when every repo failed")
 	}
 	if !strings.Contains(m.View(), "Could not load PRs") {

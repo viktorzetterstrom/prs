@@ -6,8 +6,8 @@ import "time"
 // exercise a distinct branch of StatusEmoji so the TUI shows every state.
 // The set is split across DemoRepos by PR number parity so the multi-repo
 // view interleaves rows from both.
-func demoPRs(kind QueryKind, repo string) []PR {
-	all := demoAll(kind)
+func demoPRs(repo string) []PR {
+	all := demoAll()
 	var out []PR
 	for i, pr := range all {
 		if DemoRepos[pr.Number%len(DemoRepos)] != repo {
@@ -19,8 +19,8 @@ func demoPRs(kind QueryKind, repo string) []PR {
 	return out
 }
 
-func demoAll(kind QueryKind) []PR {
-	open := []PR{
+func demoAll() []PR {
+	return []PR{
 		{
 			Number: 142, Title: "Approved, ready to merge",
 			Additions: 12, Deletions: 3,
@@ -68,29 +68,4 @@ func demoAll(kind QueryKind) []PR {
 		},
 	}
 
-	if kind == QueryActive {
-		return open
-	}
-
-	// Last 7 days: only terminal states — open PRs already live on the Active tab.
-	return []PR{
-		{
-			Number: 135, Title: "Shipped earlier this week",
-			Additions: 45, Deletions: 20,
-			URL:   "https://github.com/example/repo/pull/135",
-			State: "MERGED",
-		},
-		{
-			Number: 134, Title: "Another one shipped yesterday",
-			Additions: 8, Deletions: 4,
-			URL:   "https://github.com/example/repo/pull/134",
-			State: "MERGED",
-		},
-		{
-			Number: 133, Title: "Abandoned experiment",
-			Additions: 3, Deletions: 3,
-			URL:   "https://github.com/example/repo/pull/133",
-			State: "CLOSED",
-		},
-	}
 }

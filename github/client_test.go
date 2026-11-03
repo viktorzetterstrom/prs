@@ -46,12 +46,12 @@ func TestGetPRsDemoMergesAndSortsAcrossRepos(t *testing.T) {
 	DemoMode = true
 	t.Cleanup(func() { DemoMode = false })
 
-	prs, errs := GetPRs(QueryActive, DemoRepos)
+	prs, errs := GetPRs(DemoRepos)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if len(prs) != len(demoAll(QueryActive)) {
-		t.Fatalf("expected all %d demo PRs across repos, got %d", len(demoAll(QueryActive)), len(prs))
+	if len(prs) != len(demoAll()) {
+		t.Fatalf("expected all %d demo PRs across repos, got %d", len(demoAll()), len(prs))
 	}
 
 	seen := map[string]bool{}
@@ -70,7 +70,7 @@ func TestGetPRsDemoMergesAndSortsAcrossRepos(t *testing.T) {
 }
 
 func TestGetPRsNoRepos(t *testing.T) {
-	prs, errs := GetPRs(QueryActive, nil)
+	prs, errs := GetPRs(nil)
 	if len(prs) != 0 || len(errs) != 0 {
 		t.Fatalf("expected empty result, got %v / %v", prs, errs)
 	}
@@ -86,5 +86,17 @@ func TestShortRepoAndSlackFormat(t *testing.T) {
 	}
 	if got, want := pr.FormatForSlack(true), "`(+1/-2)` Fix thing [sierra-config#42](u)"; got != want {
 		t.Errorf("multi-repo slack = %q, want %q", got, want)
+	}
+}
+
+func TestSuggestReposDemo(t *testing.T) {
+	DemoMode = true
+	t.Cleanup(func() { DemoMode = false })
+	repos, err := SuggestRepos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) < len(DemoRepos)+1 {
+		t.Fatalf("expected demo suggestions beyond the tracked set, got %v", repos)
 	}
 }

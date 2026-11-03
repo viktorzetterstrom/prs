@@ -2,16 +2,12 @@
 
 A Go CLI tool to list GitHub pull requests and copy formatted PR info to your clipboard for Slack.
 
-Two tabs are available: **Active** (your open PRs) and **Last 7 days** (PRs authored by you that were merged or closed in the last seven days). Use `Tab` to switch. Each tab is fetched lazily the first time you open it and auto-refreshes every 30s while visible.
-
-PRs can come from more than one repository at once — see [Tracking repos](#tracking-repos).
+It shows your open PRs across the repos you choose to track and auto-refreshes every 30s. A key legend at the bottom of every screen shows what you can do.
 
 ## Status emojis
 
 | Emoji | Meaning                                      |
 | ----- | -------------------------------------------- |
-| 🟣    | Merged                                       |
-| ⚫    | Closed without merging                       |
 | 📝    | Draft                                        |
 | ⚠️    | Merge conflict — needs a rebase              |
 | ❌    | CI is failing                                |
@@ -29,7 +25,7 @@ Priority order: the first matching state wins (so an approved PR with failing CI
   brew install gh
   gh auth login
   ```
-- **A repo to track.** With no config, `prs` uses the GitHub repo of the current directory, so run it from inside a clone. Once you have picked repos with `c` (see below) it works from anywhere.
+- **A repo to track.** On first launch `prs` opens a picker pre-filled with the GitHub repo of the current directory (if any) and the repos you have recently opened PRs in. Once you have picked, it works from any directory.
 
 ## Install
 
@@ -54,7 +50,7 @@ go install github.com/viktorzetterstrom/prs@latest
 
 ## Tracking repos
 
-Press `c` to open the **Tracked repos** screen. It lists every repo `prs` is following, plus the repo of the current directory as a candidate if it isn't tracked yet.
+The first time you run `prs` it opens the **Tracked repos** picker. Afterwards press `c` to get back to it. It lists every repo `prs` is following, then the repo of the current directory and the repos you have recently authored PRs in (looked up via `gh search prs --author=@me`) as untracked candidates.
 
 | Key           | Action                                        |
 | ------------- | --------------------------------------------- |
@@ -78,9 +74,8 @@ When more than one repo is tracked, each row shows the repo name and the merged 
 | Key                | Action                                       |
 | ------------------ | -------------------------------------------- |
 | ↑ / ↓              | Navigate the list                            |
-| Tab / Shift+Tab    | Switch between tabs                          |
 | Space / Enter      | Copy the selected PR (Slack format)          |
 | `o`                | Open the selected PR in your default browser |
-| `r`                | Refresh the current tab                      |
+| `r`                | Refresh                                      |
 | `c`                | Choose which repos to track                  |
 | `q` / Ctrl+C       | Quit                                         |

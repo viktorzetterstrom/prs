@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -43,22 +44,6 @@ func (pr PR) ShortRepo() string {
 	return pr.Repo
 }
 
-type QueryKind int
-
-const (
-	QueryActive QueryKind = iota
-	QueryLastWeek
-)
-
-func (k QueryKind) Label() string {
-	switch k {
-	case QueryLastWeek:
-		return "Last 7 days"
-	default:
-		return "Active"
-	}
-}
-
 // DemoMode short-circuits GetPRs to return canned data instead of shelling out
 // to `gh`. Used by the --demo CLI flag to preview the TUI without a network call.
 var DemoMode bool
@@ -78,9 +63,10 @@ type RepoError struct {
 
 func (e RepoError) Error() string { return fmt.Sprintf("%s: %v", e.Repo, e.Err) }
 
-// GetPRs fetches PRs for every repo concurrently and returns them merged,
-// most recently updated first, together with one error per repo that failed.
-func GetPRs(kind QueryKind, repos []string) ([]PR, []RepoError) {
+// GetPRs fetches the caller's open PRs in every repo concurrently and returns
+// them merged, most recently updated first, together with one error per repo
+// that failed.
+func GetPRs(repos []string) ([]PR, []RepoError) {
 	type result struct {
 		prs []PR
 		err error
@@ -92,7 +78,7 @@ func GetPRs(kind QueryKind, repos []string) ([]PR, []RepoError) {
 		wg.Add(1)
 		go func(i int, repo string) {
 			defer wg.Done()
-			prs, err := getRepoPRs(kind, repo)
+			prs, err := getRepoPRs(repo)
 			for j := range prs {
 				prs[j].Repo = repo
 			}
@@ -116,27 +102,14 @@ func GetPRs(kind QueryKind, repos []string) ([]PR, []RepoError) {
 	return merged, errs
 }
 
-func getRepoPRs(kind QueryKind, repo string) ([]PR, error) {
+func getRepoPRs(repo string) ([]PR, error) {
 	if DemoMode {
-		return demoPRs(kind, repo), nil
+		return demoPRs(repo), nil
 	}
 
-	args := []string{"pr", "list", "--repo", repo, "--json", jsonFields}
-	switch kind {
-	case QueryLastWeek:
-		oneWeekAgo := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
-		searchQuery := fmt.Sprintf("author:@me is:closed updated:>%s", oneWeekAgo)
-		args = append(args, "--state", "all", "--search", searchQuery)
-	default:
-		args = append(args, "--search", "author:@me")
-	}
-
-	output, err := exec.Command("gh", args...).Output()
+	output, err := runGH("pr", "list", "--repo", repo, "--search", "author:@me", "--json", jsonFields)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("gh command failed: %s", strings.TrimSpace(string(exitErr.Stderr)))
-		}
-		return nil, fmt.Errorf("failed to execute gh command: %w", err)
+		return nil, err
 	}
 
 	var prs []PR
@@ -144,6 +117,47 @@ func getRepoPRs(kind QueryKind, repo string) ([]PR, error) {
 		return nil, fmt.Errorf("failed to parse PR data: %w", err)
 	}
 	return prs, nil
+}
+
+// SuggestRepos returns the repositories the current user has recently opened
+// PRs in, most recently active first. It backs the first-run repo picker.
+func SuggestRepos() ([]string, error) {
+	if DemoMode {
+		return append(slices.Clone(DemoRepos), "example/archive", "example/docs"), nil
+	}
+
+	output, err := runGH("search", "prs", "--author=@me", "--sort=updated", "--limit=100", "--json", "repository")
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []struct {
+		Repository struct {
+			NameWithOwner string `json:"nameWithOwner"`
+		} `json:"repository"`
+	}
+	if err := json.Unmarshal(output, &rows); err != nil {
+		return nil, fmt.Errorf("failed to parse search results: %w", err)
+	}
+
+	var repos []string
+	for _, r := range rows {
+		if name := r.Repository.NameWithOwner; name != "" && !slices.Contains(repos, name) {
+			repos = append(repos, name)
+		}
+	}
+	return repos, nil
+}
+
+func runGH(args ...string) ([]byte, error) {
+	output, err := exec.Command("gh", args...).Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("gh command failed: %s", strings.TrimSpace(string(exitErr.Stderr)))
+		}
+		return nil, fmt.Errorf("failed to execute gh command: %w", err)
+	}
+	return output, nil
 }
 
 var remoteRepoRe = regexp.MustCompile(`github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?/?$`)

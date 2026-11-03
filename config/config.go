@@ -29,25 +29,26 @@ func Path() (string, error) {
 	return filepath.Join(dir, "prs", "config.json"), nil
 }
 
-// Load reads the config file. A missing file yields an empty Config and nil
-// error so first-run behaviour needs no special casing by callers.
-func Load() (Config, error) {
+// Load reads the config file. The bool reports whether the file existed; a
+// missing file yields an empty Config, false and a nil error so callers can
+// detect a first run without special-casing the error.
+func Load() (Config, bool, error) {
 	path, err := Path()
 	if err != nil {
-		return Config{}, err
+		return Config{}, false, err
 	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return Config{}, nil
+		return Config{}, false, nil
 	}
 	if err != nil {
-		return Config{}, err
+		return Config{}, false, err
 	}
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, err
+		return Config{}, true, err
 	}
-	return cfg, nil
+	return cfg, true, nil
 }
 
 func (c Config) Save() error {

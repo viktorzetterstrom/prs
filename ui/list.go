@@ -34,11 +34,13 @@ var (
 	timestampStyle    = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("241"))
 	errorStyle        = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("9")).Bold(true)
 	hintStyle         = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("241"))
-	activeTabStyle    = lipgloss.NewStyle().PaddingLeft(1).PaddingRight(1).Foreground(lipgloss.Color("255")).Background(lipgloss.Color("33")).Bold(true)
-	inactiveTabStyle  = lipgloss.NewStyle().PaddingLeft(1).PaddingRight(1).Foreground(lipgloss.Color("241"))
-	tabBarStyle       = lipgloss.NewStyle().PaddingLeft(2).PaddingBottom(1)
+	hintKeyStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+	titleStyle        = lipgloss.NewStyle().PaddingLeft(1).PaddingRight(1).Foreground(lipgloss.Color("255")).Background(lipgloss.Color("33")).Bold(true)
+	subtitleStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	headerStyle       = lipgloss.NewStyle().PaddingLeft(2).PaddingBottom(1)
 	checkedStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 	uncheckedStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	welcomeStyle      = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("250"))
 )
 
 type item struct {
@@ -111,10 +113,14 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 type tickMsg time.Time
 
 type refreshMsg struct {
-	kind github.QueryKind
 	gen  int
 	prs  []github.PR
 	errs []github.RepoError
+}
+
+type suggestMsg struct {
+	repos []string
+	err   error
 }
 
 type resetCopiedMsg struct{}
@@ -122,7 +128,6 @@ type resetCopiedMsg struct{}
 type openedMsg struct{ err error }
 
 type viewState struct {
-	kind        github.QueryKind
 	prs         []github.PR
 	loaded      bool
 	loading     bool
@@ -131,11 +136,7 @@ type viewState struct {
 }
 
 func (v *viewState) reset() {
-	v.prs = nil
-	v.loaded = false
-	v.loading = false
-	v.err = nil
-	v.lastUpdated = time.Time{}
+	*v = viewState{}
 }
 
 type mode int
@@ -148,8 +149,7 @@ const (
 
 type model struct {
 	list    list.Model
-	views   []*viewState
-	active  int
+	view    viewState
 	copied  bool
 	openErr error
 
@@ -163,14 +163,24 @@ type model struct {
 	// repo set are discarded when they land.
 	gen int
 
+	// firstRun is set when no config file existed at startup. The app then
+	// opens on the repo picker and saves whatever is selected when the user
+	// leaves it, so the picker does not reappear on the next launch.
+	firstRun bool
+
 	mode      mode
 	cfgCursor int
 	cfgDirty  bool
 	cfgErr    error
 	input     textinput.Model
-}
 
-func (m model) currentView() *viewState { return m.views[m.active] }
+	// Repo suggestions come from the user's recent PR history and are fetched
+	// once per session, the first time the config screen is shown.
+	suggestions    []string
+	suggestLoading bool
+	suggestFetched bool
+	suggestErr     error
+}
 
 func (m model) multiRepo() bool { return len(m.repos) > 1 }
 
@@ -189,27 +199,45 @@ func openInBrowser(url string) tea.Cmd {
 	}
 }
 
-func fetchPRs(kind github.QueryKind, repos []string, gen int) tea.Cmd {
+func fetchPRs(repos []string, gen int) tea.Cmd {
 	repos = slices.Clone(repos)
 	return func() tea.Msg {
-		prs, errs := github.GetPRs(kind, repos)
-		return refreshMsg{kind: kind, gen: gen, prs: prs, errs: errs}
+		prs, errs := github.GetPRs(repos)
+		return refreshMsg{gen: gen, prs: prs, errs: errs}
 	}
 }
 
-func (m *model) startFetch(v *viewState) tea.Cmd {
+func fetchSuggestions() tea.Msg {
+	repos, err := github.SuggestRepos()
+	return suggestMsg{repos: repos, err: err}
+}
+
+func (m *model) startFetch() tea.Cmd {
 	if len(m.repos) == 0 {
 		return nil
 	}
-	v.loading = true
-	return fetchPRs(v.kind, m.repos, m.gen)
+	m.view.loading = true
+	return fetchPRs(m.repos, m.gen)
+}
+
+func (m *model) ensureSuggestions() tea.Cmd {
+	if m.suggestFetched || m.suggestLoading {
+		return nil
+	}
+	m.suggestLoading = true
+	return fetchSuggestions
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) }),
-		m.startFetch(m.currentView()),
-	)
+	}
+	if m.mode == modeConfig {
+		cmds = append(cmds, m.ensureSuggestions())
+	} else {
+		cmds = append(cmds, m.startFetch())
+	}
+	return tea.Batch(cmds...)
 }
 
 func formatTimeAgo(t time.Time) string {
@@ -224,49 +252,58 @@ func formatTimeAgo(t time.Time) string {
 	}
 }
 
-func (m *model) syncListToActive() {
-	v := m.currentView()
-	items := make([]list.Item, len(v.prs))
-	for i, pr := range v.prs {
+func (m *model) syncList() {
+	items := make([]list.Item, len(m.view.prs))
+	for i, pr := range m.view.prs {
 		items[i] = item{pr: pr, showRepo: m.multiRepo()}
 	}
 	m.list.SetItems(items)
-	if len(v.prs) == 0 {
+	if len(m.view.prs) == 0 {
 		m.list.Select(0)
-	} else if m.list.Index() >= len(v.prs) {
-		m.list.Select(len(v.prs) - 1)
+	} else if m.list.Index() >= len(m.view.prs) {
+		m.list.Select(len(m.view.prs) - 1)
 	}
 }
 
 func (m *model) ensureLoaded() tea.Cmd {
-	v := m.currentView()
-	if v.loaded || v.loading {
+	if m.view.loaded || m.view.loading {
 		return nil
 	}
-	return m.startFetch(v)
+	return m.startFetch()
 }
 
-// applyRepoChange persists the repo list and invalidates every view so the
+func (m *model) saveConfig() {
+	m.cfgErr = config.Config{Repos: m.repos}.Save()
+	if m.cfgErr == nil {
+		m.firstRun = false
+	}
+}
+
+// applyRepoChange persists the repo list and invalidates the view so the
 // next visit refetches against the new set.
 func (m *model) applyRepoChange() {
 	m.cfgDirty = true
 	m.gen++
-	m.cfgErr = config.Config{Repos: m.repos}.Save()
-	for _, v := range m.views {
-		v.reset()
-	}
+	m.saveConfig()
+	m.view.reset()
 	if m.cfgCursor >= m.configRowCount() {
 		m.cfgCursor = max(0, m.configRowCount()-1)
 	}
 }
 
-// configRows lists the repos shown on the config screen: every tracked repo,
-// plus the current directory's repo as an untracked candidate if it is not
-// already in the list.
+// configRows lists the repos shown on the config screen: every tracked repo
+// first, then the current directory's repo and the suggestions that are not
+// already tracked.
 func (m model) configRows() []string {
 	rows := slices.Clone(m.repos)
-	if m.currentRepo != "" && !slices.Contains(rows, m.currentRepo) {
-		rows = append(rows, m.currentRepo)
+	add := func(r string) {
+		if r != "" && !slices.Contains(rows, r) {
+			rows = append(rows, r)
+		}
+	}
+	add(m.currentRepo)
+	for _, r := range m.suggestions {
+		add(r)
 	}
 	return rows
 }
@@ -275,11 +312,16 @@ func (m model) configRowCount() int { return len(m.configRows()) }
 
 func (m *model) leaveConfig() tea.Cmd {
 	m.mode = modeList
+	if m.firstRun && len(m.repos) > 0 && !m.cfgDirty {
+		// First run, user accepted the preselected repos: persist them so the
+		// picker does not greet them again next time.
+		m.saveConfig()
+	}
 	if !m.cfgDirty {
-		return nil
+		return m.ensureLoaded()
 	}
 	m.cfgDirty = false
-	m.syncListToActive()
+	m.syncList()
 	return m.ensureLoaded()
 }
 
@@ -353,9 +395,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		cmds := []tea.Cmd{tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })}
-		v := m.currentView()
+		v := &m.view
 		if m.mode == modeList && v.loaded && !v.loading && time.Since(v.lastUpdated) >= refreshInterval {
-			cmds = append(cmds, m.startFetch(v))
+			cmds = append(cmds, m.startFetch())
 		}
 		return m, tea.Batch(cmds...)
 
@@ -364,30 +406,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Result for a repo set the user has since changed; drop it.
 			return m, nil
 		}
-		for _, v := range m.views {
-			if v.kind != msg.kind {
-				continue
-			}
-			v.loading = false
-			v.lastUpdated = time.Now()
-			allFailed := len(msg.errs) > 0 && len(msg.errs) == len(m.repos)
-			if !allFailed {
-				v.prs = msg.prs
-				v.loaded = true
-			}
-			v.err = nil
-			if len(msg.errs) > 0 {
-				errs := make([]error, len(msg.errs))
-				for i, e := range msg.errs {
-					errs[i] = e
-				}
-				v.err = errors.Join(errs...)
-			}
-			if v == m.currentView() {
-				m.syncListToActive()
-			}
-			break
+		v := &m.view
+		v.loading = false
+		v.lastUpdated = time.Now()
+		allFailed := len(msg.errs) > 0 && len(msg.errs) == len(m.repos)
+		if !allFailed {
+			v.prs = msg.prs
+			v.loaded = true
 		}
+		v.err = nil
+		if len(msg.errs) > 0 {
+			errs := make([]error, len(msg.errs))
+			for i, e := range msg.errs {
+				errs[i] = e
+			}
+			v.err = errors.Join(errs...)
+		}
+		m.syncList()
+		return m, nil
+
+	case suggestMsg:
+		m.suggestLoading = false
+		m.suggestFetched = true
+		m.suggestErr = msg.err
+		m.suggestions = msg.repos
 		return m, nil
 
 	case tea.KeyMsg:
@@ -398,20 +440,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateAddRepo(msg)
 		}
 
-		switch keypress := msg.String(); keypress {
+		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
-
-		case "tab", "shift+tab":
-			if keypress == "tab" {
-				m.active = (m.active + 1) % len(m.views)
-			} else {
-				m.active = (m.active - 1 + len(m.views)) % len(m.views)
-			}
-			m.copied = false
-			m.openErr = nil
-			m.syncListToActive()
-			return m, m.ensureLoaded()
 
 		case "c":
 			m.mode = modeConfig
@@ -419,19 +450,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.openErr = nil
 			m.cfgErr = nil
 			m.cfgCursor = 0
-			return m, nil
+			return m, m.ensureSuggestions()
 
 		case "r":
-			v := m.currentView()
-			if !v.loading {
-				return m, m.startFetch(v)
+			if !m.view.loading {
+				return m, m.startFetch()
 			}
 			return m, nil
 
 		case " ", "enter":
-			v := m.currentView()
-			if len(v.prs) > 0 && m.list.Index() < len(v.prs) {
-				selectedPR := v.prs[m.list.Index()]
+			if len(m.view.prs) > 0 && m.list.Index() < len(m.view.prs) {
+				selectedPR := m.view.prs[m.list.Index()]
 				formatted := selectedPR.FormatForSlack(m.multiRepo())
 				if err := clipboard.WriteAll(formatted); err == nil {
 					m.copied = true
@@ -443,10 +472,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "o":
-			v := m.currentView()
-			if len(v.prs) > 0 && m.list.Index() < len(v.prs) {
+			if len(m.view.prs) > 0 && m.list.Index() < len(m.view.prs) {
 				m.openErr = nil
-				return m, openInBrowser(v.prs[m.list.Index()].URL)
+				return m, openInBrowser(m.view.prs[m.list.Index()].URL)
 			}
 			return m, nil
 
@@ -469,26 +497,48 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m model) renderTabs() string {
-	parts := make([]string, len(m.views))
-	for i, v := range m.views {
-		label := v.kind.Label()
-		if i == m.active {
-			parts[i] = activeTabStyle.Render(label)
-		} else {
-			parts[i] = inactiveTabStyle.Render(label)
-		}
+// hints renders a key legend like "↑/↓ move · enter copy · q quit".
+func hints(pairs ...string) string {
+	parts := make([]string, 0, len(pairs)/2)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		parts = append(parts, hintKeyStyle.Render(pairs[i])+" "+pairs[i+1])
 	}
-	return tabBarStyle.Render(strings.Join(parts, " "))
+	return hintStyle.Render(strings.Join(parts, " · "))
+}
+
+func (m model) renderHeader() string {
+	title := titleStyle.Render("Open PRs")
+	var sub string
+	switch len(m.repos) {
+	case 0:
+		sub = ""
+	case 1:
+		sub = m.repos[0]
+	default:
+		short := make([]string, len(m.repos))
+		for i, r := range m.repos {
+			short[i] = github.PR{Repo: r}.ShortRepo()
+		}
+		sub = strings.Join(short, ", ")
+	}
+	if sub != "" {
+		title += " " + subtitleStyle.Render(sub)
+	}
+	return headerStyle.Render(title)
 }
 
 func (m model) viewConfig() string {
 	var b strings.Builder
-	b.WriteString(tabBarStyle.Render(activeTabStyle.Render("Tracked repos")))
+	b.WriteString(headerStyle.Render(titleStyle.Render("Tracked repos")))
 	b.WriteString("\n")
 
+	if m.firstRun {
+		b.WriteString(welcomeStyle.Render("Welcome! Pick the repos whose PRs you want to see, then press esc."))
+		b.WriteString("\n\n")
+	}
+
 	rows := m.configRows()
-	if len(rows) == 0 {
+	if len(rows) == 0 && !m.suggestLoading {
 		b.WriteString(itemStyle.Render("No repos yet. Press a to add one."))
 		b.WriteString("\n")
 	}
@@ -511,6 +561,18 @@ func (m model) viewConfig() string {
 		b.WriteString("\n")
 	}
 
+	switch {
+	case m.suggestLoading:
+		b.WriteString(timestampStyle.Render("Looking up repos you've opened PRs in…"))
+		b.WriteString("\n")
+	case m.suggestErr != nil:
+		b.WriteString(errorStyle.Render(fmt.Sprintf("⚠ Could not load suggestions: %v", m.suggestErr)))
+		b.WriteString("\n")
+	case m.suggestFetched && len(m.suggestions) == 0:
+		b.WriteString(timestampStyle.Render("No recent PR activity found to suggest from."))
+		b.WriteString("\n")
+	}
+
 	b.WriteString("\n")
 	if m.mode == modeAddRepo {
 		b.WriteString(itemStyle.Render("Add repo (OWNER/REPO): " + m.input.View()))
@@ -519,13 +581,13 @@ func (m model) viewConfig() string {
 			b.WriteString(errorStyle.Render(fmt.Sprintf("⚠ %v", m.cfgErr)))
 			b.WriteString("\n")
 		}
-		b.WriteString(hintStyle.Render("enter add · esc cancel"))
+		b.WriteString(hints("enter", "add", "esc", "cancel"))
 	} else {
 		if m.cfgErr != nil {
 			b.WriteString(errorStyle.Render(fmt.Sprintf("⚠ Could not save config: %v", m.cfgErr)))
 			b.WriteString("\n")
 		}
-		b.WriteString(hintStyle.Render("space toggle · a add · esc back · q quit"))
+		b.WriteString(hints("↑/↓", "move", "space", "track/untrack", "a", "add by name", "esc", "done", "q", "quit"))
 	}
 	return b.String()
 }
@@ -535,18 +597,18 @@ func (m model) View() string {
 		return m.viewConfig()
 	}
 
-	v := m.currentView()
+	v := m.view
 
 	var body string
 	switch {
 	case len(m.repos) == 0:
-		body = itemStyle.Render("No repos tracked. Press c to add one.")
+		body = itemStyle.Render("No repos tracked yet. Press c to pick some.")
 	case v.loading && !v.loaded:
 		body = itemStyle.Render("Loading…")
 	case v.err != nil && !v.loaded:
 		body = errorStyle.Render(fmt.Sprintf("⚠ Could not load PRs:\n%v", indent(v.err.Error(), 2)))
 	case len(v.prs) == 0:
-		body = itemStyle.Render("No pull requests found.")
+		body = itemStyle.Render("No open pull requests.")
 	default:
 		body = m.list.View()
 	}
@@ -567,8 +629,9 @@ func (m model) View() string {
 	case v.loaded:
 		footer.WriteString("\n" + timestampStyle.Render(formatTimeAgo(v.lastUpdated)))
 	}
+	footer.WriteString("\n\n" + hints("↑/↓", "move", "enter", "copy for Slack", "o", "open", "r", "refresh", "c", "repos", "q", "quit"))
 
-	return m.renderTabs() + "\n" + body + footer.String()
+	return m.renderHeader() + "\n" + body + footer.String()
 }
 
 func indent(s string, n int) string {
@@ -577,23 +640,23 @@ func indent(s string, n int) string {
 }
 
 // resolveRepos builds the initial tracked-repo list: the config file wins,
-// otherwise fall back to the repo of the current directory (today's behaviour
-// for users without a config).
-func resolveRepos(currentRepo string) ([]string, error) {
+// otherwise fall back to the repo of the current directory. The bool reports
+// whether a config file existed, which decides if the repo picker opens first.
+func resolveRepos(currentRepo string) (repos []string, configExists bool, err error) {
 	if github.DemoMode {
-		return slices.Clone(github.DemoRepos), nil
+		return slices.Clone(github.DemoRepos), true, nil
 	}
-	cfg, err := config.Load()
+	cfg, found, err := config.Load()
 	if err != nil {
-		return nil, fmt.Errorf("could not read config: %w", err)
+		return nil, found, fmt.Errorf("could not read config: %w", err)
 	}
 	if len(cfg.Repos) > 0 {
-		return cfg.Repos, nil
+		return cfg.Repos, true, nil
 	}
 	if currentRepo != "" {
-		return []string{currentRepo}, nil
+		return []string{currentRepo}, found, nil
 	}
-	return nil, nil
+	return nil, found, nil
 }
 
 func Run() error {
@@ -610,16 +673,11 @@ func Run() error {
 	l.Styles.PaginationStyle = paginationStyle
 	l.Styles.HelpStyle = helpStyle
 
-	views := []*viewState{
-		{kind: github.QueryActive},
-		{kind: github.QueryLastWeek},
-	}
-
 	currentRepo := ""
 	if !github.DemoMode {
 		currentRepo = github.CurrentRepo()
 	}
-	repos, err := resolveRepos(currentRepo)
+	repos, configExists, err := resolveRepos(currentRepo)
 	if err != nil {
 		return err
 	}
@@ -631,11 +689,13 @@ func Run() error {
 
 	m := model{
 		list:        l,
-		views:       views,
-		active:      0,
 		repos:       repos,
 		currentRepo: currentRepo,
 		input:       ti,
+		firstRun:    !configExists,
+	}
+	if m.firstRun {
+		m.mode = modeConfig
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())

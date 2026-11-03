@@ -8,9 +8,12 @@ import (
 
 func TestLoadMissingFileIsEmptyConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	cfg, err := Load()
+	cfg, found, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
+	}
+	if found {
+		t.Fatal("expected found=false for a missing file")
 	}
 	if len(cfg.Repos) != 0 {
 		t.Fatalf("expected no repos, got %v", cfg.Repos)
@@ -29,9 +32,12 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		t.Fatalf("config file not written at expected path: %v", err)
 	}
 
-	got, err := Load()
+	got, found, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
+	}
+	if !found {
+		t.Fatal("expected found=true after Save")
 	}
 	if len(got.Repos) != 2 || got.Repos[0] != want.Repos[0] || got.Repos[1] != want.Repos[1] {
 		t.Fatalf("round trip mismatch: got %v want %v", got.Repos, want.Repos)

@@ -12,16 +12,20 @@ func TestGetPRsLive(t *testing.T) {
 		t.Skip("set PRS_LIVE_REPOS=owner/a,owner/b to run against GitHub")
 	}
 	repos := splitComma(spec)
-	for _, kind := range []QueryKind{QueryActive, QueryLastWeek} {
-		prs, errs := GetPRs(kind, repos)
-		for _, e := range errs {
-			t.Errorf("%s: %v", kind.Label(), e)
-		}
-		t.Logf("%s: %d PRs", kind.Label(), len(prs))
-		for _, pr := range prs {
-			t.Logf("  %s %-16s %s", pr.StatusEmoji(), pr.ShortRepo(), pr.FormatForDisplay())
-		}
+	prs, errs := GetPRs(repos)
+	for _, e := range errs {
+		t.Errorf("%v", e)
 	}
+	t.Logf("%d open PRs", len(prs))
+	for _, pr := range prs {
+		t.Logf("  %s %-16s %s", pr.StatusEmoji(), pr.ShortRepo(), pr.FormatForDisplay())
+	}
+
+	suggested, err := SuggestRepos()
+	if err != nil {
+		t.Fatalf("SuggestRepos: %v", err)
+	}
+	t.Logf("suggested repos: %v", suggested)
 }
 
 func splitComma(s string) []string {
