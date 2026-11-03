@@ -627,3 +627,37 @@ func TestSingleRepoLoadingIsOneLine(t *testing.T) {
 		t.Fatalf("single repo should show one spinner and no heading:\n%s", v)
 	}
 }
+
+func TestFirstFrameShowsLoadingSkeleton(t *testing.T) {
+	m := newTestModel(t, []string{"a/platform", "a/config"}, "")
+	v := m.View()
+	frame := strings.TrimRight(m.spinner.View(), " ")
+	if !m.view.loading || strings.Count(v, frame) != 2 {
+		t.Fatalf("first frame should show a spinner under each heading before Init's fetch lands:\n%s", v)
+	}
+	if strings.Contains(v, "no open pull requests") {
+		t.Fatalf("idle empty state must not flash before the first fetch:\n%s", v)
+	}
+	rm, ok := runForRefresh(m.Init())
+	if !ok {
+		t.Fatal("Init should start the fetch")
+	}
+	m, _ = send(m, rm)
+	if m.view.loading {
+		t.Fatal("fetch result should clear loading")
+	}
+}
+
+func TestFirstRunFirstFrameShowsSuggestedLoading(t *testing.T) {
+	m := newFirstRunModel(t, []string{"a/prs"}, "a/prs")
+	v := m.View()
+	if !m.suggestLoading || !strings.Contains(v, "suggested from your recent prs") {
+		t.Fatalf("first-run first frame should show the suggested heading loading:\n%s", v)
+	}
+	if !strings.Contains(v, strings.TrimRight(m.spinner.View(), " ")) {
+		t.Fatalf("spinner missing under suggested heading:\n%s", v)
+	}
+	if m.Init() == nil {
+		t.Fatal("Init should start the suggestion lookup")
+	}
+}

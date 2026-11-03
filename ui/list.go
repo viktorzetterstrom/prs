@@ -206,14 +206,18 @@ func (m *model) ensureSuggestions() tea.Cmd {
 	return tea.Batch(fetchSuggestions, m.spinner.Tick)
 }
 
+// Init only returns commands. The loading flags they correspond to are set
+// by newModel, because Init runs on a copy of the model and any state it
+// changed would be lost.
 func (m model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) }),
 	}
-	if m.mode == modeConfig {
-		cmds = append(cmds, m.ensureSuggestions())
-	} else {
-		cmds = append(cmds, m.startFetch())
+	if m.view.loading {
+		cmds = append(cmds, fetchPRs(m.repos, m.gen), m.spinner.Tick)
+	}
+	if m.suggestLoading {
+		cmds = append(cmds, fetchSuggestions, m.spinner.Tick)
 	}
 	return tea.Batch(cmds...)
 }
@@ -879,8 +883,13 @@ func newModel(repos []string, currentRepo string, firstRun bool) model {
 		spinner:     sp,
 		firstRun:    firstRun,
 	}
+	// Mark what Init will start loading so the first frame already shows
+	// the spinners (see Init).
 	if m.firstRun {
 		m.mode = modeConfig
+		m.suggestLoading = true
+	} else if len(m.repos) > 0 {
+		m.view.loading = true
 	}
 	return m
 }
