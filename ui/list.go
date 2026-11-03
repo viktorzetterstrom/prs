@@ -278,6 +278,12 @@ func (m *model) ensureLoaded() tea.Cmd {
 }
 
 func (m *model) saveConfig() {
+	if github.DemoMode {
+		// Demo mode must never touch the real config file; the in-memory
+		// repo list still changes so the UI can be exercised.
+		m.firstRun = false
+		return
+	}
 	m.cfgErr = config.Config{Repos: m.repos}.Save()
 	if m.cfgErr == nil {
 		m.firstRun = false
@@ -577,6 +583,10 @@ func (m model) viewConfig() string {
 
 	if m.firstRun {
 		b.WriteString(welcomeStyle.Render("Welcome! Pick the repos whose PRs you want to see, then press esc."))
+		b.WriteString("\n\n")
+	}
+	if github.DemoMode {
+		b.WriteString(timestampStyle.Render("Demo mode: changes here are not saved."))
 		b.WriteString("\n\n")
 	}
 

@@ -427,3 +427,31 @@ func TestScrollWindowKeepsSelectionVisible(t *testing.T) {
 		t.Fatalf("top of list should have scrolled out of view:\n%s", v)
 	}
 }
+
+func TestDemoModeNeverWritesConfig(t *testing.T) {
+	github.DemoMode = true
+	t.Cleanup(func() { github.DemoMode = false })
+
+	m := newTestModel(t, []string{"example/platform"}, "")
+	m, _ = send(m, key("c"), key(" ")) // untrack
+	m, _ = send(m, key("a"))
+	m = typeString(m, "example/added")
+	m, _ = send(m, key("enter"), key("esc"))
+
+	if len(m.repos) != 1 || m.repos[0] != "example/added" {
+		t.Fatalf("in-memory repo list should still change in demo mode, got %v", m.repos)
+	}
+	if _, found, _ := config.Load(); found {
+		t.Fatal("demo mode must not create a config file")
+	}
+
+	// First-run flow in demo mode must not save either.
+	m = newFirstRunModel(t, []string{"example/platform"}, "example/platform")
+	m, _ = send(m, key("esc"))
+	if _, found, _ := config.Load(); found {
+		t.Fatal("first-run demo must not create a config file")
+	}
+	if m.firstRun {
+		t.Fatal("firstRun should still clear so the picker does not loop")
+	}
+}
