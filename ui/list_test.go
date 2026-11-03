@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -177,6 +178,54 @@ func TestToggleCandidateAddsRepoAndSavesConfig(t *testing.T) {
 	}
 	if !m.cfgDirty || m.gen != 1 {
 		t.Fatalf("expected dirty flag and bumped gen, got dirty=%v gen=%d", m.cfgDirty, m.gen)
+	}
+}
+
+func TestTogglingKeepsRowOrder(t *testing.T) {
+	m := newTestModel(t, []string{"a/one", "a/two"}, "a/cur")
+	m, _ = send(m, key("c"))
+	m, _ = send(m, suggestMsg{repos: []string{"a/sug"}})
+	want := []string{"a/one", "a/two", "a/cur", "a/sug"}
+
+	check := func(step string) {
+		t.Helper()
+		got := m.configRows()
+		if !slices.Equal(got, want) {
+			t.Fatalf("%s: rows = %v, want %v", step, got, want)
+		}
+	}
+	check("initial")
+
+	// Untrack the first row: it must stay in place, unchecked.
+	m, _ = send(m, key(" "))
+	check("after untrack a/one")
+	if slices.Contains(m.repos, "a/one") {
+		t.Fatal("a/one should be untracked")
+	}
+
+	// Track the suggestion at the bottom: it must stay at the bottom.
+	m, _ = send(m, key("down"), key("down"), key("down"), key(" "))
+	check("after track a/sug")
+	if !slices.Equal(m.repos, []string{"a/two", "a/sug"}) {
+		t.Fatalf("tracked repos should follow display order, got %v", m.repos)
+	}
+
+	// Re-track the first row: back to its original position, not appended.
+	m.cfgCursor = 0
+	m, _ = send(m, key(" "))
+	check("after re-track a/one")
+	if !slices.Equal(m.repos, []string{"a/one", "a/two", "a/sug"}) {
+		t.Fatalf("re-tracked repo should keep display order, got %v", m.repos)
+	}
+
+	// Adding by name appends at the end.
+	m, _ = send(m, key("a"))
+	m = typeString(m, "a/new")
+	m, _ = send(m, key("enter"))
+	want = append(want, "a/new")
+	check("after add a/new")
+	if m.cfgCursor != 4 {
+		t.Fatalf("cursor should land on the added repo, got %d", m.cfgCursor)
 	}
 }
 

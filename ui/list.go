@@ -173,6 +173,8 @@ type model struct {
 	cfgDirty  bool
 	cfgErr    error
 	input     textinput.Model
+	// cfgOrder is the frozen row order of the config screen; see configRows.
+	cfgOrder []string
 
 	// Repo suggestions come from the user's recent PR history and are fetched
 	// once per session, the first time the config screen is shown.
@@ -291,21 +293,48 @@ func (m *model) applyRepoChange() {
 	}
 }
 
-// configRows lists the repos shown on the config screen: every tracked repo
-// first, then the current directory's repo and the suggestions that are not
-// already tracked.
+// configRows lists the repos shown on the config screen in a stable order:
+// repos keep the position they were first seen in (tracked repos at startup,
+// then the current directory's repo, then suggestions as they arrive, then
+// anything added by name). Toggling a repo changes its checkmark, not its
+// row, so the cursor stays on what the user is looking at.
 func (m model) configRows() []string {
-	rows := slices.Clone(m.repos)
+	rows := slices.Clone(m.cfgOrder)
 	add := func(r string) {
 		if r != "" && !slices.Contains(rows, r) {
 			rows = append(rows, r)
 		}
+	}
+	for _, r := range m.repos {
+		add(r)
 	}
 	add(m.currentRepo)
 	for _, r := range m.suggestions {
 		add(r)
 	}
 	return rows
+}
+
+// rememberRows freezes the current row order so later changes to repos or
+// suggestions only append.
+func (m *model) rememberRows() {
+	m.cfgOrder = m.configRows()
+}
+
+// trackRepo adds repo to the tracked set, keeping m.repos in display order so
+// the header and the config file match what the picker shows.
+func (m *model) trackRepo(repo string) {
+	m.rememberRows()
+	if !slices.Contains(m.cfgOrder, repo) {
+		m.cfgOrder = append(m.cfgOrder, repo)
+	}
+	var repos []string
+	for _, r := range m.cfgOrder {
+		if r == repo || slices.Contains(m.repos, r) {
+			repos = append(repos, r)
+		}
+	}
+	m.repos = repos
 }
 
 func (m model) configRowCount() int { return len(m.configRows()) }
@@ -343,10 +372,11 @@ func (m model) updateConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ", "enter":
 		if m.cfgCursor < len(rows) {
 			repo := rows[m.cfgCursor]
+			m.rememberRows()
 			if idx := slices.Index(m.repos, repo); idx >= 0 {
 				m.repos = slices.Delete(m.repos, idx, idx+1)
 			} else {
-				m.repos = append(m.repos, repo)
+				m.trackRepo(repo)
 			}
 			m.applyRepoChange()
 		}
@@ -376,7 +406,7 @@ func (m model) updateAddRepo(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeConfig
 		m.input.Blur()
 		if !slices.Contains(m.repos, repo) {
-			m.repos = append(m.repos, repo)
+			m.trackRepo(repo)
 			m.applyRepoChange()
 		}
 		m.cfgCursor = slices.Index(m.configRows(), repo)
