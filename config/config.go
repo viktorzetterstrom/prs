@@ -65,3 +65,15 @@ func (c Config) Save() error {
 	}
 	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
+
+// Remove deletes the config file. A missing file is not an error.
+func Remove() error {
+	path, err := Path()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}

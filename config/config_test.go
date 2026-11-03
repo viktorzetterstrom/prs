@@ -55,3 +55,19 @@ func TestPathFallsBackToHomeDotConfig(t *testing.T) {
 		t.Fatalf("unexpected path %q", p)
 	}
 }
+
+func TestRemove(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := Remove(); err != nil {
+		t.Fatalf("Remove on a missing file should be a no-op, got %v", err)
+	}
+	if err := (Config{Repos: []string{"a/b"}}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := Remove(); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if _, found, _ := Load(); found {
+		t.Fatal("config should be gone after Remove")
+	}
+}
