@@ -75,7 +75,7 @@ func TestNoReposShowsHint(t *testing.T) {
 func TestListShowsKeyHints(t *testing.T) {
 	m := newTestModel(t, []string{"a/one"}, "")
 	v := m.View()
-	for _, want := range []string{"copy for Slack", "open", "refresh", "config", "quit"} {
+	for _, want := range []string{"copy for Slack", "open", "refresh", "config"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("hint %q missing from list view:\n%s", want, v)
 		}

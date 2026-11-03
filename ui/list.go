@@ -672,7 +672,7 @@ func (m model) viewConfig() string {
 			b.WriteString(errorStyle.Render(fmt.Sprintf("⚠ Could not save config: %v", m.cfgErr)))
 			b.WriteString("\n")
 		}
-		b.WriteString(hints("↑/↓", "move", "space", "toggle", "a", "add by name", "enter", "done", "q", "quit"))
+		b.WriteString(hints("↑/↓", "move", "space", "toggle", "a", "add by name", "enter", "done"))
 	}
 	return b.String()
 }
@@ -722,7 +722,7 @@ func (m model) View() string {
 		timestamp = timestampStyle.Render(formatTimeAgo(v.lastUpdated))
 	}
 	footer.WriteString("\n" + timestamp)
-	footer.WriteString("\n\n" + hints("↑/↓", "move", "enter", "copy for Slack", "o", "open", "r", "refresh", "c", "config", "q", "quit"))
+	footer.WriteString("\n\n" + hints("↑/↓", "move", "enter", "copy for Slack", "o", "open", "r", "refresh", "c", "config"))
 
 	return m.renderHeader() + "\n" + body + "\n" + footer.String()
 }
