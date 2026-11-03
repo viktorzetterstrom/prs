@@ -36,7 +36,7 @@ go install github.com/viktorzetterstrom/prs@latest
 
 ## Tracking repos
 
-The first time you run `prs` it opens the **Config** screen. Afterwards press `c` to get back to it. It lists every repo `prs` is following, then the repo of the current directory and the repos you have recently authored PRs in (looked up via `gh search prs --author=@me`) as untracked candidates.
+The first time you run `prs` it opens the **config** screen. Afterwards press `c` to get back to it. It lists every repo `prs` is following, then the repo of the current directory and the repos you have recently authored PRs in (looked up via `gh search prs --author=@me`) as untracked candidates.
 
 | Key           | Action                                                        |
 | ------------- | ------------------------------------------------------------- |

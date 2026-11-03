@@ -142,7 +142,7 @@ type model struct {
 	cfgDirty  bool
 	cfgErr    error
 	input     textinput.Model
-	// savedRepos is the "Saved" section of the picker: the repos in the
+	// savedRepos is the "saved" section of the picker: the repos in the
 	// config at startup plus anything added by name since. It is a frozen
 	// snapshot so untracking a repo leaves its row in place.
 	savedRepos []string
@@ -217,11 +217,11 @@ func formatTimeAgo(t time.Time) string {
 	d := time.Since(t)
 	switch {
 	case d < 5*time.Second:
-		return "Updated just now"
+		return "updated just now"
 	case d < time.Minute:
-		return fmt.Sprintf("Updated %ds ago", int(d.Seconds()))
+		return fmt.Sprintf("updated %ds ago", int(d.Seconds()))
 	default:
-		return fmt.Sprintf("Updated %dm ago", int(d.Minutes()))
+		return fmt.Sprintf("updated %dm ago", int(d.Minutes()))
 	}
 }
 
@@ -324,9 +324,9 @@ func (m model) sections() []repoSection {
 			secs = append(secs, repoSection{title: title, repos: rows})
 		}
 	}
-	add("Saved", m.savedRepos)
-	add("Current directory", []string{m.currentRepo})
-	add("Suggested from your recent PRs", m.suggestions)
+	add("saved", m.savedRepos)
+	add("current directory", []string{m.currentRepo})
+	add("suggested from your recent prs", m.suggestions)
 	return secs
 }
 
@@ -455,7 +455,7 @@ func (m model) updateAddRepo(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		repo := strings.TrimSpace(m.input.Value())
 		if !github.ValidRepo(repo) {
-			m.cfgErr = fmt.Errorf("expected OWNER/REPO, got %q", repo)
+			m.cfgErr = fmt.Errorf("expected owner/repo, got %q", repo)
 			return m, nil
 		}
 		m.mode = modeConfig
@@ -601,26 +601,26 @@ func hints(pairs ...string) string {
 }
 
 func (m model) renderHeader() string {
-	return headerStyle.Render(titleStyle.Render("Open PRs"))
+	return headerStyle.Render(titleStyle.Render("open prs"))
 }
 
 func (m model) viewConfig() string {
 	var b strings.Builder
-	b.WriteString(headerStyle.Render(titleStyle.Render("Config")))
+	b.WriteString(headerStyle.Render(titleStyle.Render("config")))
 	b.WriteString("\n")
 
 	if m.firstRun {
-		b.WriteString(welcomeStyle.Render("Welcome! Pick the repos whose PRs you want to see, then press esc."))
+		b.WriteString(welcomeStyle.Render("welcome! pick the repos whose prs you want to see, then press enter when done."))
 		b.WriteString("\n\n")
 	}
 	if github.DemoMode {
-		b.WriteString(timestampStyle.Render("Demo mode: changes here are not saved."))
+		b.WriteString(timestampStyle.Render("demo mode: changes here are not saved."))
 		b.WriteString("\n\n")
 	}
 
 	secs := m.sections()
 	if len(secs) == 0 && !m.suggestLoading {
-		b.WriteString(itemStyle.Render("No repos yet. Press a to add one."))
+		b.WriteString(itemStyle.Render("no repos yet. press a to add one."))
 		b.WriteString("\n")
 	}
 	row := 0
@@ -648,19 +648,19 @@ func (m model) viewConfig() string {
 
 	switch {
 	case m.suggestLoading:
-		b.WriteString("\n" + timestampStyle.Render("Looking up repos you've opened PRs in…"))
+		b.WriteString("\n" + timestampStyle.Render("looking up repos you've opened prs in…"))
 		b.WriteString("\n")
 	case m.suggestErr != nil:
-		b.WriteString("\n" + errorStyle.Render(fmt.Sprintf("⚠ Could not load suggestions: %v", m.suggestErr)))
+		b.WriteString("\n" + errorStyle.Render(fmt.Sprintf("⚠ could not load suggestions: %v", m.suggestErr)))
 		b.WriteString("\n")
 	case m.suggestFetched && len(m.suggestions) == 0:
-		b.WriteString("\n" + timestampStyle.Render("No recent PR activity found to suggest from."))
+		b.WriteString("\n" + timestampStyle.Render("no recent pr activity found to suggest from."))
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
 	if m.mode == modeAddRepo {
-		b.WriteString(itemStyle.Render("Add repo (OWNER/REPO): " + m.input.View()))
+		b.WriteString(itemStyle.Render("add repo (owner/repo): " + m.input.View()))
 		b.WriteString("\n")
 		if m.cfgErr != nil {
 			b.WriteString(errorStyle.Render(fmt.Sprintf("⚠ %v", m.cfgErr)))
@@ -669,7 +669,7 @@ func (m model) viewConfig() string {
 		b.WriteString(hints("enter", "add", "esc", "cancel"))
 	} else {
 		if m.cfgErr != nil {
-			b.WriteString(errorStyle.Render(fmt.Sprintf("⚠ Could not save config: %v", m.cfgErr)))
+			b.WriteString(errorStyle.Render(fmt.Sprintf("⚠ could not save config: %v", m.cfgErr)))
 			b.WriteString("\n")
 		}
 		b.WriteString(hints("↑/↓", "move", "space", "toggle", "a", "add by name", "enter", "done"))
@@ -687,13 +687,13 @@ func (m model) View() string {
 	var body string
 	switch {
 	case len(m.repos) == 0:
-		body = itemStyle.Render("No repos tracked yet. Press c to pick some.")
+		body = itemStyle.Render("no repos tracked yet. press c to pick some.")
 	case v.loading && !v.loaded:
-		body = itemStyle.Render("Loading…")
+		body = itemStyle.Render("loading…")
 	case v.err != nil && !v.loaded:
-		body = errorStyle.Render(fmt.Sprintf("⚠ Could not load PRs:\n%v", indent(v.err.Error(), 2)))
+		body = errorStyle.Render(fmt.Sprintf("⚠ could not load prs:\n%v", indent(v.err.Error(), 2)))
 	case len(v.prs) == 0:
-		body = itemStyle.Render("No open pull requests.")
+		body = itemStyle.Render("no open pull requests.")
 	default:
 		body = m.renderRows()
 	}
@@ -704,25 +704,25 @@ func (m model) View() string {
 	// are multi-line and stay until the next successful fetch.
 	var footer strings.Builder
 	if v.err != nil && v.loaded {
-		footer.WriteString("\n" + errorStyle.Render(fmt.Sprintf("⚠ Refresh failed:\n%v", indent(v.err.Error(), 2))))
+		footer.WriteString("\n" + errorStyle.Render(fmt.Sprintf("⚠ refresh failed:\n%v", indent(v.err.Error(), 2))))
 	}
 	status := ""
 	switch {
 	case m.copied:
-		status = copiedStyle.Render("✓ Copied to clipboard!")
+		status = copiedStyle.Render("✓ copied to clipboard!")
 	case m.openErr != nil:
-		status = errorStyle.Render(fmt.Sprintf("⚠ Could not open browser: %v", m.openErr))
+		status = errorStyle.Render(fmt.Sprintf("⚠ could not open browser: %v", m.openErr))
 	}
 	footer.WriteString("\n" + status)
 	timestamp := ""
 	switch {
 	case v.loading && v.loaded:
-		timestamp = timestampStyle.Render("Refreshing…")
+		timestamp = timestampStyle.Render("refreshing…")
 	case v.loaded:
 		timestamp = timestampStyle.Render(formatTimeAgo(v.lastUpdated))
 	}
 	footer.WriteString("\n" + timestamp)
-	footer.WriteString("\n\n" + hints("↑/↓", "move", "enter", "copy for Slack", "o", "open", "r", "refresh", "c", "config"))
+	footer.WriteString("\n\n" + hints("↑/↓", "move", "enter", "copy", "o", "open", "r", "refresh", "c", "config"))
 
 	return m.renderHeader() + "\n" + body + "\n" + footer.String()
 }
@@ -807,7 +807,7 @@ func resolveRepos(currentRepo string) (repos []string, configExists bool, err er
 // newModel wires up the initial state. repos is the tracked list; on a first
 // run (no config file yet) the app opens on the repo picker. The current
 // directory's repo is pre-tracked by resolveRepos on a first run, so it shows
-// under "Current directory" rather than "Saved".
+// under "current directory" rather than "saved".
 func newModel(repos []string, currentRepo string, firstRun bool) model {
 	ti := textinput.New()
 	ti.Placeholder = "owner/repo"

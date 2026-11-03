@@ -64,7 +64,7 @@ func typeString(m model, s string) model {
 
 func TestNoReposShowsHint(t *testing.T) {
 	m := newTestModel(t, nil, "")
-	if !strings.Contains(m.View(), "No repos tracked yet. Press c to pick some.") {
+	if !strings.Contains(m.View(), "no repos tracked yet. press c to pick some.") {
 		t.Fatalf("expected empty-state hint, got:\n%s", m.View())
 	}
 	if cmd := m.Init(); cmd == nil {
@@ -75,12 +75,12 @@ func TestNoReposShowsHint(t *testing.T) {
 func TestListShowsKeyHints(t *testing.T) {
 	m := newTestModel(t, []string{"a/one"}, "")
 	v := m.View()
-	for _, want := range []string{"copy for Slack", "open", "refresh", "config"} {
+	for _, want := range []string{"copy", "open", "refresh", "config"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("hint %q missing from list view:\n%s", want, v)
 		}
 	}
-	if !strings.Contains(v, "Open PRs") {
+	if !strings.Contains(v, "open prs") {
 		t.Errorf("header should show the title:\n%s", v)
 	}
 	if strings.Contains(v, "a/one") {
@@ -95,25 +95,25 @@ func TestOpeningConfigRequestsSuggestionsOnce(t *testing.T) {
 		t.Fatal("entering config should kick off a suggestion fetch")
 	}
 	v := m.View()
-	if !strings.Contains(v, "Config") {
+	if !strings.Contains(v, "config") {
 		t.Fatalf("expected config title, got:\n%s", v)
 	}
 	if !strings.Contains(v, "✓ sanalabs/sierra-platform") {
 		t.Errorf("tracked repo should be checked:\n%s", v)
 	}
-	if !strings.Contains(v, "○ sanalabs/prs") || !strings.Contains(v, "Current directory") {
+	if !strings.Contains(v, "○ sanalabs/prs") || !strings.Contains(v, "current directory") {
 		t.Errorf("current repo should appear unchecked under its own heading:\n%s", v)
 	}
-	if !strings.Contains(v, "Saved") {
+	if !strings.Contains(v, "saved") {
 		t.Errorf("configured repos should sit under a Saved heading:\n%s", v)
 	}
-	if !strings.Contains(v, "Looking up repos") {
+	if !strings.Contains(v, "looking up repos") {
 		t.Errorf("should show suggestion loading state:\n%s", v)
 	}
 
 	m, _ = send(m, suggestMsg{repos: []string{"sanalabs/sierra-platform", "sanalabs/sierra-config"}})
 	v = m.View()
-	if !strings.Contains(v, "○ sanalabs/sierra-config") || !strings.Contains(v, "Suggested") {
+	if !strings.Contains(v, "○ sanalabs/sierra-config") || !strings.Contains(v, "suggested") {
 		t.Errorf("untracked suggestion should be listed unchecked under Suggested:\n%s", v)
 	}
 	if strings.Count(v, "sierra-platform") != 1 {
@@ -134,10 +134,10 @@ func TestFirstRunOpensPickerAndSavesOnLeave(t *testing.T) {
 	if cmd := m.Init(); cmd == nil {
 		t.Fatal("first-run Init should fetch suggestions")
 	}
-	if !strings.Contains(m.View(), "Welcome!") {
+	if !strings.Contains(m.View(), "welcome!") {
 		t.Fatalf("first run should show welcome text:\n%s", m.View())
 	}
-	if strings.Contains(m.View(), "Saved") {
+	if strings.Contains(m.View(), "saved") {
 		t.Fatalf("first run has nothing saved yet; the preselected repo belongs under Current directory:\n%s", m.View())
 	}
 
@@ -166,7 +166,7 @@ func TestFirstRunWithNothingSelectedDoesNotSave(t *testing.T) {
 	if _, found, _ := config.Load(); found {
 		t.Fatal("empty selection must not be persisted")
 	}
-	if !strings.Contains(m.View(), "Press c to pick some") {
+	if !strings.Contains(m.View(), "press c to pick some") {
 		t.Fatalf("expected empty state:\n%s", m.View())
 	}
 }
@@ -234,7 +234,7 @@ func TestTogglingKeepsRowOrder(t *testing.T) {
 		t.Fatalf("cursor should land on the added repo, got %d", m.cfgCursor)
 	}
 	secs := m.sections()
-	if len(secs) != 3 || secs[0].title != "Saved" || !slices.Equal(secs[0].repos, []string{"a/one", "a/two", "a/new"}) {
+	if len(secs) != 3 || secs[0].title != "saved" || !slices.Equal(secs[0].repos, []string{"a/one", "a/two", "a/new"}) {
 		t.Fatalf("unexpected sections: %+v", secs)
 	}
 }
@@ -264,7 +264,7 @@ func TestAddRepoViaInput(t *testing.T) {
 	if m.mode != modeAddRepo || m.cfgErr == nil {
 		t.Fatalf("invalid repo should be rejected, mode=%v err=%v", m.mode, m.cfgErr)
 	}
-	if !strings.Contains(m.View(), "expected OWNER/REPO") {
+	if !strings.Contains(m.View(), "expected owner/repo") {
 		t.Fatalf("validation error not shown:\n%s", m.View())
 	}
 
@@ -354,7 +354,7 @@ func TestAllReposFailingShowsErrorBody(t *testing.T) {
 	if m.view.loaded {
 		t.Fatal("view should not be marked loaded when every repo failed")
 	}
-	if !strings.Contains(m.View(), "Could not load PRs") {
+	if !strings.Contains(m.View(), "could not load prs") {
 		t.Fatalf("expected error body:\n%s", m.View())
 	}
 }
@@ -532,13 +532,13 @@ func TestCopiedMessageDoesNotShiftLayout(t *testing.T) {
 	if strings.Count(before, "\n") != strings.Count(after, "\n") {
 		t.Fatalf("copied message changed the line count:\n--- before\n%s\n--- after\n%s", before, after)
 	}
-	if !strings.Contains(after, "Copied to clipboard") {
+	if !strings.Contains(after, "copied to clipboard") {
 		t.Fatal("copied message missing")
 	}
 	hintLine := func(v string) int {
 		lines := strings.Split(v, "\n")
 		for i, l := range lines {
-			if strings.Contains(l, "copy for Slack") {
+			if strings.Contains(l, "copy") {
 				return i
 			}
 		}
@@ -552,15 +552,15 @@ func TestCopiedMessageDoesNotShiftLayout(t *testing.T) {
 func TestWelcomeStaysUntilFirstRunPickerIsLeft(t *testing.T) {
 	m := newFirstRunModel(t, nil, "")
 	m, _ = send(m, suggestMsg{repos: []string{"a/one", "a/two"}})
-	if !strings.Contains(m.View(), "Welcome!") {
+	if !strings.Contains(m.View(), "welcome!") {
 		t.Fatal("welcome should show on first run")
 	}
 	m, _ = send(m, key(" ")) // track a/one
-	if !strings.Contains(m.View(), "Welcome!") {
+	if !strings.Contains(m.View(), "welcome!") {
 		t.Fatalf("welcome must stay after the first toggle:\n%s", m.View())
 	}
 	m, _ = send(m, key("down"), key(" ")) // track a/two
-	if !strings.Contains(m.View(), "Welcome!") {
+	if !strings.Contains(m.View(), "welcome!") {
 		t.Fatal("welcome must stay after further toggles")
 	}
 	m, _ = send(m, key("esc"))
@@ -568,7 +568,7 @@ func TestWelcomeStaysUntilFirstRunPickerIsLeft(t *testing.T) {
 		t.Fatal("firstRun should clear once the picker is left with a selection")
 	}
 	m, _ = send(m, key("c"))
-	if strings.Contains(m.View(), "Welcome!") {
+	if strings.Contains(m.View(), "welcome!") {
 		t.Fatal("welcome should not return on later visits")
 	}
 	cfg, found, _ := config.Load()
