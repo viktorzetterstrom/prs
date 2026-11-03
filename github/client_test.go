@@ -81,11 +81,8 @@ func TestShortRepoAndSlackFormat(t *testing.T) {
 	if pr.ShortRepo() != "sierra-config" {
 		t.Fatalf("ShortRepo = %q", pr.ShortRepo())
 	}
-	if got, want := pr.FormatForSlack(false), "`(+1/-2)` Fix thing [#42](u)"; got != want {
-		t.Errorf("single-repo slack = %q, want %q", got, want)
-	}
-	if got, want := pr.FormatForSlack(true), "`(+1/-2)` Fix thing [sierra-config#42](u)"; got != want {
-		t.Errorf("multi-repo slack = %q, want %q", got, want)
+	if got, want := pr.FormatForSlack(), "`(+1/-2)` Fix thing [#42](u)"; got != want {
+		t.Errorf("slack = %q, want %q", got, want)
 	}
 }
 

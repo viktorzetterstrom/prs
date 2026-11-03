@@ -195,19 +195,14 @@ func (pr PR) FormatForDisplay() string {
 	return fmt.Sprintf("#%d (+%d/-%d) %s", pr.Number, pr.Additions, pr.Deletions, pr.Title)
 }
 
-// FormatForSlack renders the PR as a Slack-flavoured markdown line. When
-// showRepo is set the link text is "repo#123" instead of "#123", since a bare
-// number is ambiguous once more than one repo is tracked.
-func (pr PR) FormatForSlack(showRepo bool) string {
-	ref := fmt.Sprintf("#%d", pr.Number)
-	if showRepo {
-		ref = pr.ShortRepo() + ref
-	}
-	return fmt.Sprintf("`(+%d/-%d)` %s [%s](%s)",
+// FormatForSlack renders the PR as a Slack-flavoured markdown line. The
+// link text is the bare PR number; the URL already identifies the repo.
+func (pr PR) FormatForSlack() string {
+	return fmt.Sprintf("`(+%d/-%d)` %s [#%d](%s)",
 		pr.Additions,
 		pr.Deletions,
 		pr.Title,
-		ref,
+		pr.Number,
 		pr.URL)
 }
 

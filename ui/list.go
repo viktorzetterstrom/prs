@@ -574,7 +574,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter", "y":
 			// Enter is the primary action; y is vim's "yank" for copy.
 			if selectedPR, ok := m.selectedPR(); ok {
-				formatted := selectedPR.FormatForSlack(m.multiRepo())
+				formatted := selectedPR.FormatForSlack()
 				if err := clipboard.WriteAll(formatted); err == nil {
 					m.copied = true
 					return m, tea.Tick(time.Millisecond*1500, func(t time.Time) tea.Msg {
