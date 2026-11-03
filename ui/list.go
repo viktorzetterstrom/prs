@@ -860,7 +860,12 @@ func resolveRepos(currentRepo string) (repos []string, configExists bool, err er
 // under "current directory" rather than "saved".
 func newModel(repos []string, currentRepo string, firstRun bool) model {
 	sp := spinner.New()
-	sp.Spinner = spinner.Dot
+	// A horizontal dot that bounces left to right, so the loader lies flat
+	// on the line instead of the tall rotating braille block.
+	sp.Spinner = spinner.Spinner{
+		Frames: []string{"●∙∙", "∙●∙", "∙∙●", "∙●∙"},
+		FPS:    time.Second / 8,
+	}
 	// Dim grey so the spinner reads as a quiet placeholder, not a highlight.
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
