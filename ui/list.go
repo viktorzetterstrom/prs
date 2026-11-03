@@ -303,6 +303,8 @@ func (m *model) applyRepoChange() {
 	}
 }
 
+const suggestedTitle = "suggested from your recent prs"
+
 // repoSection is one group of rows on the config screen.
 type repoSection struct {
 	title string
@@ -331,7 +333,7 @@ func (m model) sections() []repoSection {
 	}
 	add("saved", m.savedRepos)
 	add("current directory", []string{m.currentRepo})
-	add("suggested from your recent prs", m.suggestions)
+	add(suggestedTitle, m.suggestions)
 	return secs
 }
 
@@ -655,9 +657,24 @@ func (m model) viewConfig() string {
 		}
 	}
 
+	// While suggestions load, show their section heading with a bare spinner
+	// beneath, like the startup skeleton, so the section is visible from the
+	// start and fills in place. Afterwards the section renders through
+	// sections() above; only the empty and error cases need a line here.
+	hasSuggestedSection := false
+	for _, sec := range secs {
+		if sec.title == suggestedTitle {
+			hasSuggestedSection = true
+		}
+	}
 	switch {
-	case m.suggestLoading:
-		b.WriteString("\n" + timestampStyle.Render(m.spinner.View()+"looking up repos you've opened prs in…"))
+	case m.suggestLoading && !hasSuggestedSection:
+		if len(secs) > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(sectionStyle.Render(suggestedTitle))
+		b.WriteString("\n")
+		b.WriteString(itemStyle.Render(strings.TrimRight(m.spinner.View(), " ")))
 		b.WriteString("\n")
 	case m.suggestErr != nil:
 		b.WriteString("\n" + errorStyle.Render(fmt.Sprintf("⚠ could not load suggestions: %v", m.suggestErr)))

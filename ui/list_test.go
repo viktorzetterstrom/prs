@@ -127,8 +127,11 @@ func TestOpeningConfigRequestsSuggestionsOnce(t *testing.T) {
 	if !strings.Contains(v, "saved") {
 		t.Errorf("configured repos should sit under a Saved heading:\n%s", v)
 	}
-	if !strings.Contains(v, "looking up repos") {
-		t.Errorf("should show suggestion loading state:\n%s", v)
+	if !strings.Contains(v, "suggested from your recent prs") {
+		t.Errorf("suggested section heading should show while loading:\n%s", v)
+	}
+	if !strings.Contains(v, strings.TrimRight(m.spinner.View(), " ")) {
+		t.Errorf("spinner should show under the suggested heading while loading:\n%s", v)
 	}
 
 	m, _ = send(m, suggestMsg{repos: []string{"sanalabs/sierra-platform", "sanalabs/sierra-config"}})
