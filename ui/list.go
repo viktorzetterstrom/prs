@@ -749,10 +749,10 @@ func (m model) windowHeight() int {
 func (m model) pageSize() int { return max(1, m.windowHeight()/2) }
 
 // renderLoading is the startup skeleton: the same headings the loaded list
-// will have, each with a spinner line beneath, so nothing jumps when the
-// results arrive. With a single repo it is one spinner line.
+// will have, each with a bare spinner beneath, so nothing jumps when the
+// results arrive. With a single repo it is one spinner.
 func (m model) renderLoading() string {
-	line := itemStyle.Render(m.spinner.View() + "loading open prs…")
+	line := itemStyle.Render(strings.TrimRight(m.spinner.View(), " "))
 	if !m.multiRepo() {
 		return line
 	}
@@ -840,7 +840,8 @@ func resolveRepos(currentRepo string) (repos []string, configExists bool, err er
 func newModel(repos []string, currentRepo string, firstRun bool) model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
-	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("33"))
+	// Dim grey so the spinner reads as a quiet placeholder, not a highlight.
+	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 	ti := textinput.New()
 	ti.Placeholder = "owner/repo"

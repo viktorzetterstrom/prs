@@ -590,13 +590,17 @@ func TestLoadingSkeletonShowsRepoHeadings(t *testing.T) {
 		t.Fatal("startFetch should mark the view loading")
 	}
 	v := m.View()
-	for _, want := range []string{"platform", "config", "loading open prs"} {
+	for _, want := range []string{"platform", "config"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("loading skeleton missing %q:\n%s", want, v)
 		}
 	}
-	if strings.Count(v, "loading open prs") != 2 {
-		t.Fatalf("expected one spinner line per repo:\n%s", v)
+	frame := strings.TrimRight(m.spinner.View(), " ")
+	if strings.Count(v, frame) != 2 {
+		t.Fatalf("expected one bare spinner per repo:\n%s", v)
+	}
+	if strings.Contains(v, "loading") {
+		t.Fatalf("startup skeleton should show the spinner only, no text:\n%s", v)
 	}
 
 	// Spinner ticks animate while loading and stop once the fetch lands.
@@ -615,7 +619,8 @@ func TestSingleRepoLoadingIsOneLine(t *testing.T) {
 	m := newTestModel(t, []string{"a/one"}, "")
 	m.startFetch()
 	v := m.View()
-	if strings.Count(v, "loading open prs") != 1 || strings.Contains(v, "\n  one\n") {
-		t.Fatalf("single repo should show one spinner line and no heading:\n%s", v)
+	frame := strings.TrimRight(m.spinner.View(), " ")
+	if strings.Count(v, frame) != 1 || strings.Contains(v, "\n  one\n") {
+		t.Fatalf("single repo should show one spinner and no heading:\n%s", v)
 	}
 }
