@@ -36,7 +36,6 @@ var (
 	headerStyle       = lipgloss.NewStyle().PaddingLeft(2).PaddingBottom(1)
 	checkedStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 	uncheckedStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	welcomeStyle      = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("250"))
 )
 
 // listRow is one line of the PR list: a repo heading, a PR, or an "empty
@@ -366,8 +365,7 @@ func (m *model) leaveConfig() tea.Cmd {
 			// does not greet them again next time.
 			m.saveConfig()
 		}
-		// The welcome text stays up for the whole first visit and only goes
-		// away once the user has left with something selected.
+		// The first visit ends once the user leaves with something selected.
 		m.firstRun = false
 	}
 	if !m.cfgDirty {
@@ -609,10 +607,6 @@ func (m model) viewConfig() string {
 	b.WriteString(headerStyle.Render(titleStyle.Render("config")))
 	b.WriteString("\n")
 
-	if m.firstRun {
-		b.WriteString(welcomeStyle.Render("welcome! pick the repos whose prs you want to see, then press enter when done."))
-		b.WriteString("\n\n")
-	}
 	if github.DemoMode {
 		b.WriteString(timestampStyle.Render("demo mode: changes here are not saved."))
 		b.WriteString("\n\n")

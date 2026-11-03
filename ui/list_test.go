@@ -134,9 +134,6 @@ func TestFirstRunOpensPickerAndSavesOnLeave(t *testing.T) {
 	if cmd := m.Init(); cmd == nil {
 		t.Fatal("first-run Init should fetch suggestions")
 	}
-	if !strings.Contains(m.View(), "welcome!") {
-		t.Fatalf("first run should show welcome text:\n%s", m.View())
-	}
 	if strings.Contains(m.View(), "saved") {
 		t.Fatalf("first run has nothing saved yet; the preselected repo belongs under Current directory:\n%s", m.View())
 	}
@@ -549,27 +546,17 @@ func TestCopiedMessageDoesNotShiftLayout(t *testing.T) {
 	}
 }
 
-func TestWelcomeStaysUntilFirstRunPickerIsLeft(t *testing.T) {
+func TestFirstRunTogglesAreSavedOnLeave(t *testing.T) {
 	m := newFirstRunModel(t, nil, "")
 	m, _ = send(m, suggestMsg{repos: []string{"a/one", "a/two"}})
-	if !strings.Contains(m.View(), "welcome!") {
-		t.Fatal("welcome should show on first run")
-	}
-	m, _ = send(m, key(" ")) // track a/one
-	if !strings.Contains(m.View(), "welcome!") {
-		t.Fatalf("welcome must stay after the first toggle:\n%s", m.View())
-	}
+	m, _ = send(m, key(" "))              // track a/one
 	m, _ = send(m, key("down"), key(" ")) // track a/two
-	if !strings.Contains(m.View(), "welcome!") {
-		t.Fatal("welcome must stay after further toggles")
+	if !m.firstRun {
+		t.Fatal("firstRun should last for the whole first visit")
 	}
 	m, _ = send(m, key("esc"))
 	if m.firstRun {
 		t.Fatal("firstRun should clear once the picker is left with a selection")
-	}
-	m, _ = send(m, key("c"))
-	if strings.Contains(m.View(), "welcome!") {
-		t.Fatal("welcome should not return on later visits")
 	}
 	cfg, found, _ := config.Load()
 	if !found || !slices.Equal(cfg.Repos, []string{"a/one", "a/two"}) {
