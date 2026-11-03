@@ -33,6 +33,14 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeySpace}
 	case "down":
 		return tea.KeyMsg{Type: tea.KeyDown}
+	case "up":
+		return tea.KeyMsg{Type: tea.KeyUp}
+	case "pgdown":
+		return tea.KeyMsg{Type: tea.KeyPgDown}
+	case "home":
+		return tea.KeyMsg{Type: tea.KeyHome}
+	case "end":
+		return tea.KeyMsg{Type: tea.KeyEnd}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }
@@ -453,5 +461,64 @@ func TestDemoModeNeverWritesConfig(t *testing.T) {
 	}
 	if m.firstRun {
 		t.Fatal("firstRun should still clear so the picker does not loop")
+	}
+}
+
+func TestListNavigationKeys(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "")
+	m, _ = send(m, tea.WindowSizeMsg{Width: 80, Height: 28}) // window 20, page 10
+	var prs []github.PR
+	for i := 1; i <= 30; i++ {
+		prs = append(prs, github.PR{Number: i, Repo: "a/one"})
+	}
+	m, _ = send(m, refreshMsg{prs: prs})
+
+	at := func(step string, want int) {
+		t.Helper()
+		if pr, _ := m.selectedPR(); pr.Number != want {
+			t.Fatalf("%s: selected #%d, want #%d", step, pr.Number, want)
+		}
+	}
+	m, _ = send(m, key("j"), key("j"), key("k"))
+	at("j j k", 2)
+	m, _ = send(m, key("G"))
+	at("G", 30)
+	m, _ = send(m, key("g"))
+	at("g", 1)
+	m, _ = send(m, key("end"))
+	at("End", 30)
+	m, _ = send(m, key("home"))
+	at("Home", 1)
+	m, _ = send(m, key("pgdown"))
+	at("PgDn", 11)
+	m, _ = send(m, tea.KeyMsg{Type: tea.KeyCtrlD})
+	at("Ctrl+D", 21)
+	m, _ = send(m, tea.KeyMsg{Type: tea.KeyCtrlU})
+	at("Ctrl+U", 11)
+	m, _ = send(m, key("down"), key("up"))
+	at("↓ ↑", 11)
+}
+
+func TestPickerEnterConfirmsAndSpaceToggles(t *testing.T) {
+	m := newTestModel(t, []string{"a/one", "a/two"}, "")
+	m, _ = send(m, key("c"), key("enter"))
+	if m.mode != modeList {
+		t.Fatalf("enter on the picker should confirm and leave, mode=%v", m.mode)
+	}
+	if len(m.repos) != 2 {
+		t.Fatalf("enter must not toggle, repos=%v", m.repos)
+	}
+	m, _ = send(m, key("c"), key("G"), key(" "))
+	if len(m.repos) != 1 || m.repos[0] != "a/one" {
+		t.Fatalf("G then space should untrack the last repo, repos=%v", m.repos)
+	}
+}
+
+func TestSpaceDoesNotCopyInList(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "")
+	m, _ = send(m, refreshMsg{prs: []github.PR{{Number: 1, Repo: "a/one", URL: "u"}}})
+	m, _ = send(m, key(" "))
+	if m.copied {
+		t.Fatal("space is reserved for toggling on the picker; copy is enter/y")
 	}
 }

@@ -377,22 +377,54 @@ func (m *model) leaveConfig() tea.Cmd {
 	return m.ensureLoaded()
 }
 
+// moveCursor applies the shared navigation keys (arrows, vim j/k, g/G,
+// Home/End, PgUp/PgDn, Ctrl+U/Ctrl+D) to a cursor over n rows. It reports
+// whether the key was a navigation key.
+func moveCursor(key string, cursor, n, page int) (int, bool) {
+	if n == 0 {
+		return 0, isNavKey(key)
+	}
+	switch key {
+	case "up", "k":
+		cursor--
+	case "down", "j":
+		cursor++
+	case "pgup", "ctrl+u":
+		cursor -= page
+	case "pgdown", "ctrl+d":
+		cursor += page
+	case "home", "g":
+		cursor = 0
+	case "end", "G":
+		cursor = n - 1
+	default:
+		return cursor, false
+	}
+	return min(max(cursor, 0), n-1), true
+}
+
+func isNavKey(key string) bool {
+	switch key {
+	case "up", "k", "down", "j", "pgup", "ctrl+u", "pgdown", "ctrl+d", "home", "g", "end", "G":
+		return true
+	}
+	return false
+}
+
 func (m model) updateConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.configRows()
-	switch msg.String() {
+	key := msg.String()
+	if cursor, ok := moveCursor(key, m.cfgCursor, len(rows), 5); ok {
+		m.cfgCursor = cursor
+		return m, nil
+	}
+	switch key {
 	case "q", "ctrl+c":
 		return m, tea.Quit
-	case "esc", "c":
+	case "esc", "enter", "c":
+		// Checklist convention: space toggles, enter confirms.
 		return m, m.leaveConfig()
-	case "up", "k":
-		if m.cfgCursor > 0 {
-			m.cfgCursor--
-		}
-	case "down", "j":
-		if m.cfgCursor < len(rows)-1 {
-			m.cfgCursor++
-		}
-	case " ", "enter":
+	case " ":
 		if m.cfgCursor < len(rows) {
 			repo := rows[m.cfgCursor]
 			if idx := slices.Index(m.repos, repo); idx >= 0 {
@@ -493,7 +525,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateAddRepo(msg)
 		}
 
-		switch msg.String() {
+		key := msg.String()
+		if cursor, ok := moveCursor(key, m.cursor, len(m.ordered), m.pageSize()); ok {
+			m.cursor = cursor
+			m.copied = false
+			m.openErr = nil
+			return m, nil
+		}
+
+		switch key {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 
@@ -511,23 +551,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-			m.copied = false
-			m.openErr = nil
-			return m, nil
-
-		case "down", "j":
-			if m.cursor < len(m.ordered)-1 {
-				m.cursor++
-			}
-			m.copied = false
-			m.openErr = nil
-			return m, nil
-
-		case " ", "enter":
+		case "enter", "y":
+			// Enter is the primary action; y is vim's "yank" for copy.
 			if selectedPR, ok := m.selectedPR(); ok {
 				formatted := selectedPR.FormatForSlack(m.multiRepo())
 				if err := clipboard.WriteAll(formatted); err == nil {
@@ -644,7 +669,7 @@ func (m model) viewConfig() string {
 			b.WriteString(errorStyle.Render(fmt.Sprintf("⚠ Could not save config: %v", m.cfgErr)))
 			b.WriteString("\n")
 		}
-		b.WriteString(hints("↑/↓", "move", "space", "track/untrack", "a", "add by name", "esc", "done", "q", "quit"))
+		b.WriteString(hints("↑/↓ j/k", "move", "space", "toggle", "a", "add by name", "enter/esc", "done", "q", "quit"))
 	}
 	return b.String()
 }
@@ -686,14 +711,24 @@ func (m model) View() string {
 	case v.loaded:
 		footer.WriteString("\n" + timestampStyle.Render(formatTimeAgo(v.lastUpdated)))
 	}
-	footer.WriteString("\n\n" + hints("↑/↓", "move", "enter", "copy for Slack", "o", "open", "r", "refresh", "c", "repos", "q", "quit"))
+	footer.WriteString("\n\n" + hints("↑/↓ j/k", "move", "enter/y", "copy for Slack", "o", "open", "r", "refresh", "c", "repos", "q", "quit"))
 
 	return m.renderHeader() + "\n" + body + "\n" + footer.String()
 }
 
+// windowHeight is how many list lines fit: the terminal height minus the
+// header, footer and key legend. Before the first WindowSizeMsg it is 16.
+func (m model) windowHeight() int {
+	if m.height > 0 {
+		return max(3, m.height-8)
+	}
+	return 16
+}
+
+// pageSize is how far PgUp/PgDn move: half a window, like less/vim.
+func (m model) pageSize() int { return max(1, m.windowHeight()/2) }
+
 // renderRows draws the grouped list, scrolled so the selected PR is visible.
-// The window height is the terminal height minus the header, footer and key
-// legend; before the first WindowSizeMsg a 16-line window is used.
 func (m model) renderRows() string {
 	lines := make([]string, len(m.rows))
 	selectedLine := 0
@@ -714,11 +749,7 @@ func (m model) renderRows() string {
 		}
 	}
 
-	window := 16
-	if m.height > 0 {
-		// header (2 lines) + blank + timestamp + blank + hints (~5) → keep a margin.
-		window = max(3, m.height-8)
-	}
+	window := m.windowHeight()
 	start := 0
 	if len(lines) > window {
 		// Keep the selection roughly centred once the list scrolls.
