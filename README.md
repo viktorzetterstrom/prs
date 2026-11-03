@@ -2,23 +2,7 @@
 
 A Go CLI tool to list GitHub pull requests and copy formatted PR info to your clipboard for Slack.
 
-Two tabs are available: **Active** (your open PRs) and **Last 7 days** (PRs authored by you that were merged or closed in the last seven days). Use `Tab` to switch. Each tab is fetched lazily the first time you open it and auto-refreshes every 30s while visible.
-
-## Status emojis
-
-| Emoji | Meaning                                      |
-| ----- | -------------------------------------------- |
-| 🟣    | Merged                                       |
-| ⚫    | Closed without merging                       |
-| 📝    | Draft                                        |
-| ⚠️    | Merge conflict — needs a rebase              |
-| ❌    | CI is failing                                |
-| 💬    | Reviewer requested changes                   |
-| ✅    | Approved — ready to merge                    |
-| 👀    | Waiting on a reviewer                        |
-| 🟢    | Open, nothing flagged                        |
-
-Priority order: the first matching state wins (so an approved PR with failing CI shows ❌, because that's the actionable thing).
+It shows your open PRs across the repos you choose to track and auto-refreshes every 30s. A key legend at the bottom of every screen shows what you can do.
 
 ## Prerequisites
 
@@ -27,7 +11,7 @@ Priority order: the first matching state wins (so an approved PR with failing CI
   brew install gh
   gh auth login
   ```
-- **Run from inside a git repo with a GitHub remote.** `gh pr list` needs the repo context.
+- **A repo to track.** On first launch `prs` opens a picker pre-filled with the GitHub repo of the current directory (if any) and the repos you have recently opened PRs in. Once you have picked, it works from any directory.
 
 ## Install
 
@@ -50,13 +34,38 @@ Re-run the install command — `@latest` re-fetches the current `main`:
 go install github.com/viktorzetterstrom/prs@latest
 ```
 
+## Tracking repos
+
+The first time you run `prs` it opens the **config** screen. Afterwards press `c` to get back to it. It lists every repo `prs` is following, then the repo of the current directory and the repos you have recently authored PRs in (looked up via `gh search prs --author=@me`) as untracked candidates.
+
+| Key           | Action                                                        |
+| ------------- | ------------------------------------------------------------- |
+| ↑ / ↓         | Move between repos                                            |
+| Space         | Track or untrack the highlighted repo                         |
+| `a`           | Add a repo by typing `OWNER/REPO`                             |
+| Enter / Esc   | Done: back to the PR list (refetches if you changed anything) |
+
+The list is saved to `~/.config/prs/config.json` (or `$XDG_CONFIG_HOME/prs/config.json`) as soon as you change it, so you can also edit it by hand:
+
+```json
+{
+  "repos": ["sanalabs/sierra-platform", "sanalabs/sierra-config"]
+}
+```
+
+To start over, run `prs --reset`: it deletes the config file and opens the first-run picker.
+
+When more than one repo is tracked, the list is grouped under one heading per repo (in the order you track them), newest update first within each group. The copied Slack line then links as `repo#123` instead of a bare `#123`. Each repo is fetched in parallel; if one fails, the others still show and the error appears in the footer.
+
 ## Keybindings
 
-| Key                | Action                                       |
-| ------------------ | -------------------------------------------- |
-| ↑ / ↓              | Navigate the list                            |
-| Tab / Shift+Tab    | Switch between tabs                          |
-| Space / Enter      | Copy the selected PR (Slack format)          |
-| `o`                | Open the selected PR in your default browser |
-| `r`                | Refresh the current tab                      |
-| `q` / Ctrl+C       | Quit                                         |
+| Key          | Action                                       |
+| ------------ | -------------------------------------------- |
+| ↑ / ↓        | Navigate the list                            |
+| Enter        | Copy the selected PR (Slack format)          |
+| `o`          | Open the selected PR in your default browser |
+| `r`          | Refresh                                      |
+| `c`          | Open the config (choose which repos to track) |
+| `q` / Ctrl+C | Quit                                         |
+
+Vim-style aliases also work on both screens: `j` / `k` to move, `g` / `G` (or Home / End) for first / last, PgUp / PgDn (or Ctrl+U / Ctrl+D) for half a page, and `y` to copy.
