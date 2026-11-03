@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/viktorzetterstrom/prs/config"
 	"github.com/viktorzetterstrom/prs/github"
@@ -16,18 +14,13 @@ import (
 func newTestModel(t *testing.T, repos []string, currentRepo string) model {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	l := list.New(nil, itemDelegate{}, 80, 16)
-	l.SetShowTitle(false)
-	l.SetShowStatusBar(false)
-	l.SetFilteringEnabled(false)
-	l.SetShowHelp(false)
-	l.SetShowPagination(false)
-	return model{
-		list:        l,
-		repos:       repos,
-		currentRepo: currentRepo,
-		input:       textinput.New(),
-	}
+	return newModel(repos, currentRepo, false)
+}
+
+func newFirstRunModel(t *testing.T, repos []string, currentRepo string) model {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	return newModel(repos, currentRepo, true)
 }
 
 func key(s string) tea.KeyMsg {
@@ -79,8 +72,11 @@ func TestListShowsKeyHints(t *testing.T) {
 			t.Errorf("hint %q missing from list view:\n%s", want, v)
 		}
 	}
-	if !strings.Contains(v, "Open PRs") || !strings.Contains(v, "a/one") {
-		t.Errorf("header should name the tracked repo:\n%s", v)
+	if !strings.Contains(v, "Open PRs") {
+		t.Errorf("header should show the title:\n%s", v)
+	}
+	if strings.Contains(v, "a/one") {
+		t.Errorf("header should not list repo names:\n%s", v)
 	}
 }
 
@@ -97,8 +93,11 @@ func TestOpeningConfigRequestsSuggestionsOnce(t *testing.T) {
 	if !strings.Contains(v, "✓ sanalabs/sierra-platform") {
 		t.Errorf("tracked repo should be checked:\n%s", v)
 	}
-	if !strings.Contains(v, "○ sanalabs/prs") || !strings.Contains(v, "(current directory)") {
-		t.Errorf("current repo should appear as unchecked candidate:\n%s", v)
+	if !strings.Contains(v, "○ sanalabs/prs") || !strings.Contains(v, "Current directory") {
+		t.Errorf("current repo should appear unchecked under its own heading:\n%s", v)
+	}
+	if !strings.Contains(v, "Saved") {
+		t.Errorf("configured repos should sit under a Saved heading:\n%s", v)
 	}
 	if !strings.Contains(v, "Looking up repos") {
 		t.Errorf("should show suggestion loading state:\n%s", v)
@@ -106,8 +105,8 @@ func TestOpeningConfigRequestsSuggestionsOnce(t *testing.T) {
 
 	m, _ = send(m, suggestMsg{repos: []string{"sanalabs/sierra-platform", "sanalabs/sierra-config"}})
 	v = m.View()
-	if !strings.Contains(v, "○ sanalabs/sierra-config") {
-		t.Errorf("untracked suggestion should be listed unchecked:\n%s", v)
+	if !strings.Contains(v, "○ sanalabs/sierra-config") || !strings.Contains(v, "Suggested") {
+		t.Errorf("untracked suggestion should be listed unchecked under Suggested:\n%s", v)
 	}
 	if strings.Count(v, "sierra-platform") != 1 {
 		t.Errorf("tracked repo that is also suggested must not be duplicated:\n%s", v)
@@ -122,15 +121,16 @@ func TestOpeningConfigRequestsSuggestionsOnce(t *testing.T) {
 }
 
 func TestFirstRunOpensPickerAndSavesOnLeave(t *testing.T) {
-	m := newTestModel(t, []string{"sanalabs/prs"}, "sanalabs/prs")
-	m.firstRun = true
-	m.mode = modeConfig
+	m := newFirstRunModel(t, []string{"sanalabs/prs"}, "sanalabs/prs")
 
 	if cmd := m.Init(); cmd == nil {
 		t.Fatal("first-run Init should fetch suggestions")
 	}
 	if !strings.Contains(m.View(), "Welcome!") {
 		t.Fatalf("first run should show welcome text:\n%s", m.View())
+	}
+	if strings.Contains(m.View(), "Saved") {
+		t.Fatalf("first run has nothing saved yet; the preselected repo belongs under Current directory:\n%s", m.View())
 	}
 
 	if _, found, _ := config.Load(); found {
@@ -153,9 +153,7 @@ func TestFirstRunOpensPickerAndSavesOnLeave(t *testing.T) {
 }
 
 func TestFirstRunWithNothingSelectedDoesNotSave(t *testing.T) {
-	m := newTestModel(t, nil, "")
-	m.firstRun = true
-	m.mode = modeConfig
+	m := newFirstRunModel(t, nil, "")
 	m, _ = send(m, key("esc"))
 	if _, found, _ := config.Load(); found {
 		t.Fatal("empty selection must not be persisted")
@@ -218,14 +216,18 @@ func TestTogglingKeepsRowOrder(t *testing.T) {
 		t.Fatalf("re-tracked repo should keep display order, got %v", m.repos)
 	}
 
-	// Adding by name appends at the end.
+	// Adding by name appends to the Saved section, ahead of the other groups.
 	m, _ = send(m, key("a"))
 	m = typeString(m, "a/new")
 	m, _ = send(m, key("enter"))
-	want = append(want, "a/new")
+	want = []string{"a/one", "a/two", "a/new", "a/cur", "a/sug"}
 	check("after add a/new")
-	if m.cfgCursor != 4 {
+	if m.cfgCursor != 2 {
 		t.Fatalf("cursor should land on the added repo, got %d", m.cfgCursor)
+	}
+	secs := m.sections()
+	if len(secs) != 3 || secs[0].title != "Saved" || !slices.Equal(secs[0].repos, []string{"a/one", "a/two", "a/new"}) {
+		t.Fatalf("unexpected sections: %+v", secs)
 	}
 }
 

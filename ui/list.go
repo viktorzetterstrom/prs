@@ -36,7 +36,7 @@ var (
 	hintStyle         = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("241"))
 	hintKeyStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 	titleStyle        = lipgloss.NewStyle().PaddingLeft(1).PaddingRight(1).Foreground(lipgloss.Color("255")).Background(lipgloss.Color("33")).Bold(true)
-	subtitleStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	sectionStyle      = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("245")).Bold(true)
 	headerStyle       = lipgloss.NewStyle().PaddingLeft(2).PaddingBottom(1)
 	checkedStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 	uncheckedStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
@@ -173,8 +173,10 @@ type model struct {
 	cfgDirty  bool
 	cfgErr    error
 	input     textinput.Model
-	// cfgOrder is the frozen row order of the config screen; see configRows.
-	cfgOrder []string
+	// savedRepos is the "Saved" section of the picker: the repos in the
+	// config at startup plus anything added by name since. It is a frozen
+	// snapshot so untracking a repo leaves its row in place.
+	savedRepos []string
 
 	// Repo suggestions come from the user's recent PR history and are fetched
 	// once per session, the first time the config screen is shown.
@@ -293,43 +295,57 @@ func (m *model) applyRepoChange() {
 	}
 }
 
-// configRows lists the repos shown on the config screen in a stable order:
-// repos keep the position they were first seen in (tracked repos at startup,
-// then the current directory's repo, then suggestions as they arrive, then
-// anything added by name). Toggling a repo changes its checkmark, not its
-// row, so the cursor stays on what the user is looking at.
-func (m model) configRows() []string {
-	rows := slices.Clone(m.cfgOrder)
-	add := func(r string) {
-		if r != "" && !slices.Contains(rows, r) {
-			rows = append(rows, r)
+// repoSection is one group of rows on the config screen.
+type repoSection struct {
+	title string
+	repos []string
+}
+
+// sections groups the picker rows by where they came from. Order inside each
+// section is stable: saved repos keep their config order (additions by name
+// append), and suggestions keep the order the search returned them in. A repo
+// appears only in the first section that lists it. Toggling a repo changes its
+// checkmark, not its row, so the cursor stays on what the user is looking at.
+func (m model) sections() []repoSection {
+	var secs []repoSection
+	seen := map[string]bool{}
+	add := func(title string, repos []string) {
+		var rows []string
+		for _, r := range repos {
+			if r != "" && !seen[r] {
+				seen[r] = true
+				rows = append(rows, r)
+			}
+		}
+		if len(rows) > 0 {
+			secs = append(secs, repoSection{title: title, repos: rows})
 		}
 	}
-	for _, r := range m.repos {
-		add(r)
-	}
-	add(m.currentRepo)
-	for _, r := range m.suggestions {
-		add(r)
+	add("Saved", m.savedRepos)
+	add("Current directory", []string{m.currentRepo})
+	add("Suggested from your recent PRs", m.suggestions)
+	return secs
+}
+
+// configRows flattens sections into the cursor's row order.
+func (m model) configRows() []string {
+	var rows []string
+	for _, sec := range m.sections() {
+		rows = append(rows, sec.repos...)
 	}
 	return rows
 }
 
-// rememberRows freezes the current row order so later changes to repos or
-// suggestions only append.
-func (m *model) rememberRows() {
-	m.cfgOrder = m.configRows()
-}
-
 // trackRepo adds repo to the tracked set, keeping m.repos in display order so
-// the header and the config file match what the picker shows.
+// the config file reads top to bottom like the picker does.
 func (m *model) trackRepo(repo string) {
-	m.rememberRows()
-	if !slices.Contains(m.cfgOrder, repo) {
-		m.cfgOrder = append(m.cfgOrder, repo)
+	rows := m.configRows()
+	if !slices.Contains(rows, repo) {
+		m.savedRepos = append(m.savedRepos, repo)
+		rows = m.configRows()
 	}
 	var repos []string
-	for _, r := range m.cfgOrder {
+	for _, r := range rows {
 		if r == repo || slices.Contains(m.repos, r) {
 			repos = append(repos, r)
 		}
@@ -372,7 +388,6 @@ func (m model) updateConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ", "enter":
 		if m.cfgCursor < len(rows) {
 			repo := rows[m.cfgCursor]
-			m.rememberRows()
 			if idx := slices.Index(m.repos, repo); idx >= 0 {
 				m.repos = slices.Delete(m.repos, idx, idx+1)
 			} else {
@@ -537,24 +552,7 @@ func hints(pairs ...string) string {
 }
 
 func (m model) renderHeader() string {
-	title := titleStyle.Render("Open PRs")
-	var sub string
-	switch len(m.repos) {
-	case 0:
-		sub = ""
-	case 1:
-		sub = m.repos[0]
-	default:
-		short := make([]string, len(m.repos))
-		for i, r := range m.repos {
-			short[i] = github.PR{Repo: r}.ShortRepo()
-		}
-		sub = strings.Join(short, ", ")
-	}
-	if sub != "" {
-		title += " " + subtitleStyle.Render(sub)
-	}
-	return headerStyle.Render(title)
+	return headerStyle.Render(titleStyle.Render("Open PRs"))
 }
 
 func (m model) viewConfig() string {
@@ -567,39 +565,43 @@ func (m model) viewConfig() string {
 		b.WriteString("\n\n")
 	}
 
-	rows := m.configRows()
-	if len(rows) == 0 && !m.suggestLoading {
+	secs := m.sections()
+	if len(secs) == 0 && !m.suggestLoading {
 		b.WriteString(itemStyle.Render("No repos yet. Press a to add one."))
 		b.WriteString("\n")
 	}
-	for i, repo := range rows {
-		tracked := slices.Contains(m.repos, repo)
-		mark := uncheckedStyle.Render("○")
-		if tracked {
-			mark = checkedStyle.Render("✓")
+	row := 0
+	for si, sec := range secs {
+		if si > 0 {
+			b.WriteString("\n")
 		}
-		label := repo
-		if repo == m.currentRepo {
-			label += repoStyle.Render("  (current directory)")
-		}
-		line := mark + " " + label
-		if i == m.cfgCursor && m.mode == modeConfig {
-			b.WriteString(selectedItemStyle.Render("➤ " + line))
-		} else {
-			b.WriteString(itemStyle.Render(line))
-		}
+		b.WriteString(sectionStyle.Render(sec.title))
 		b.WriteString("\n")
+		for _, repo := range sec.repos {
+			mark := uncheckedStyle.Render("○")
+			if slices.Contains(m.repos, repo) {
+				mark = checkedStyle.Render("✓")
+			}
+			line := mark + " " + repo
+			if row == m.cfgCursor && m.mode == modeConfig {
+				b.WriteString(selectedItemStyle.Render("➤ " + line))
+			} else {
+				b.WriteString(itemStyle.Render(line))
+			}
+			b.WriteString("\n")
+			row++
+		}
 	}
 
 	switch {
 	case m.suggestLoading:
-		b.WriteString(timestampStyle.Render("Looking up repos you've opened PRs in…"))
+		b.WriteString("\n" + timestampStyle.Render("Looking up repos you've opened PRs in…"))
 		b.WriteString("\n")
 	case m.suggestErr != nil:
-		b.WriteString(errorStyle.Render(fmt.Sprintf("⚠ Could not load suggestions: %v", m.suggestErr)))
+		b.WriteString("\n" + errorStyle.Render(fmt.Sprintf("⚠ Could not load suggestions: %v", m.suggestErr)))
 		b.WriteString("\n")
 	case m.suggestFetched && len(m.suggestions) == 0:
-		b.WriteString(timestampStyle.Render("No recent PR activity found to suggest from."))
+		b.WriteString("\n" + timestampStyle.Render("No recent PR activity found to suggest from."))
 		b.WriteString("\n")
 	}
 
@@ -689,7 +691,11 @@ func resolveRepos(currentRepo string) (repos []string, configExists bool, err er
 	return nil, found, nil
 }
 
-func Run() error {
+// newModel wires up the initial state. repos is the tracked list; on a first
+// run (no config file yet) the app opens on the repo picker. The current
+// directory's repo is pre-tracked by resolveRepos on a first run, so it shows
+// under "Current directory" rather than "Saved".
+func newModel(repos []string, currentRepo string, firstRun bool) model {
 	const defaultWidth = 80
 	const listHeight = 16
 
@@ -703,6 +709,31 @@ func Run() error {
 	l.Styles.PaginationStyle = paginationStyle
 	l.Styles.HelpStyle = helpStyle
 
+	ti := textinput.New()
+	ti.Placeholder = "owner/repo"
+	ti.CharLimit = 200
+	ti.Width = 40
+
+	saved := slices.Clone(repos)
+	if firstRun {
+		saved = nil
+	}
+
+	m := model{
+		list:        l,
+		repos:       repos,
+		savedRepos:  saved,
+		currentRepo: currentRepo,
+		input:       ti,
+		firstRun:    firstRun,
+	}
+	if m.firstRun {
+		m.mode = modeConfig
+	}
+	return m
+}
+
+func Run() error {
 	currentRepo := ""
 	if !github.DemoMode {
 		currentRepo = github.CurrentRepo()
@@ -712,21 +743,7 @@ func Run() error {
 		return err
 	}
 
-	ti := textinput.New()
-	ti.Placeholder = "owner/repo"
-	ti.CharLimit = 200
-	ti.Width = 40
-
-	m := model{
-		list:        l,
-		repos:       repos,
-		currentRepo: currentRepo,
-		input:       ti,
-		firstRun:    !configExists,
-	}
-	if m.firstRun {
-		m.mode = modeConfig
-	}
+	m := newModel(repos, currentRepo, !configExists)
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
