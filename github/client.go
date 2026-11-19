@@ -196,14 +196,16 @@ func (pr PR) FormatForDisplay() string {
 }
 
 // FormatForSlack renders the PR as a Slack-flavoured markdown line. The
-// link text is the bare PR number; the URL already identifies the repo.
+// link text is the bare PR number; the URL already identifies the repo. The
+// link sits before the title rather than at the end, because a pasted line
+// ending in "#123" makes Slack pop up its channel autocomplete.
 func (pr PR) FormatForSlack() string {
-	return fmt.Sprintf("`(+%d/-%d)` %s [#%d](%s)",
+	return fmt.Sprintf("`(+%d/-%d)` [#%d](%s) %s",
 		pr.Additions,
 		pr.Deletions,
-		pr.Title,
 		pr.Number,
-		pr.URL)
+		pr.URL,
+		pr.Title)
 }
 
 // CIStatus rolls up StatusCheckRollup into FAILURE / PENDING / SUCCESS / "".

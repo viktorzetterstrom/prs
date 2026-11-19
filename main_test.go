@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -42,8 +43,8 @@ func TestJSONListsEveryDemoPR(t *testing.T) {
 		if pr.Repo == "" || pr.Status == "" || pr.URL == "" {
 			t.Errorf("PR #%d is missing repo, status or url: %+v", pr.Number, pr)
 		}
-		if !strings.HasSuffix(pr.Slack, "("+pr.URL+")") {
-			t.Errorf("PR #%d slack line %q does not end with its link", pr.Number, pr.Slack)
+		if !strings.Contains(pr.Slack, fmt.Sprintf("[#%d](%s)", pr.Number, pr.URL)) {
+			t.Errorf("PR #%d slack line %q does not link its number", pr.Number, pr.Slack)
 		}
 	}
 	if !strings.Contains(stdout, `"errors": []`) {

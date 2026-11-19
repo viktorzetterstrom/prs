@@ -32,7 +32,7 @@ prs --json
       "additions": 12,
       "deletions": 3,
       "updatedAt": "2026-11-19T09:12:44Z",
-      "slack": "`(+12/-3)` Retry failed webhooks [#142](https://github.com/owner/platform/pull/142)"
+      "slack": "`(+12/-3)` [#142](https://github.com/owner/platform/pull/142) Retry failed webhooks"
     }
   ],
   "errors": []
