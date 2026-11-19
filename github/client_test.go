@@ -97,3 +97,23 @@ func TestSuggestReposDemo(t *testing.T) {
 		t.Fatalf("expected demo suggestions beyond the tracked set, got %v", repos)
 	}
 }
+
+func TestStatusOfEachDemoPR(t *testing.T) {
+	want := map[int]string{
+		142: "approved",
+		141: "ci_failing",
+		140: "changes_requested",
+		139: "review_required",
+		138: "conflicting",
+		137: "draft",
+		136: "open",
+	}
+	for _, pr := range demoAll() {
+		if got := pr.Status(); got != want[pr.Number] {
+			t.Errorf("#%d status = %q, want %q", pr.Number, got, want[pr.Number])
+		}
+		if pr.StatusEmoji() == "" {
+			t.Errorf("#%d status %q has no emoji", pr.Number, pr.Status())
+		}
+	}
+}

@@ -834,26 +834,6 @@ func indent(s string, n int) string {
 	return pad + strings.ReplaceAll(s, "\n", "\n"+pad)
 }
 
-// resolveRepos builds the initial tracked-repo list: the config file wins,
-// otherwise fall back to the repo of the current directory. The bool reports
-// whether a config file existed, which decides if the repo picker opens first.
-func resolveRepos(currentRepo string) (repos []string, configExists bool, err error) {
-	if github.DemoMode {
-		return slices.Clone(github.DemoRepos), true, nil
-	}
-	cfg, found, err := config.Load()
-	if err != nil {
-		return nil, found, fmt.Errorf("could not read config: %w", err)
-	}
-	if len(cfg.Repos) > 0 {
-		return cfg.Repos, true, nil
-	}
-	if currentRepo != "" {
-		return []string{currentRepo}, found, nil
-	}
-	return nil, found, nil
-}
-
 // newModel wires up the initial state. repos is the tracked list; on a first
 // run (no config file yet) the app opens on the repo picker. The current
 // directory's repo is pre-tracked by resolveRepos on a first run, so it shows
@@ -899,17 +879,11 @@ func newModel(repos []string, currentRepo string, firstRun bool) model {
 	return m
 }
 
-func Run() error {
-	currentRepo := ""
-	if !github.DemoMode {
-		currentRepo = github.CurrentRepo()
-	}
-	repos, configExists, err := resolveRepos(currentRepo)
-	if err != nil {
-		return err
-	}
-
-	m := newModel(repos, currentRepo, !configExists)
+// Run starts the interactive list. repos is the tracked set, currentRepo the
+// repo of the current directory (offered on the config screen), and firstRun
+// opens on the repo picker and saves what is chosen when the user leaves it.
+func Run(repos []string, currentRepo string, firstRun bool) error {
+	m := newModel(repos, currentRepo, firstRun)
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

@@ -206,9 +206,9 @@ func (pr PR) FormatForSlack() string {
 		pr.URL)
 }
 
-// ciStatus rolls up StatusCheckRollup into FAILURE / PENDING / SUCCESS / "".
+// CIStatus rolls up StatusCheckRollup into FAILURE / PENDING / SUCCESS / "".
 // Empty means no checks are configured.
-func (pr PR) ciStatus() string {
+func (pr PR) CIStatus() string {
 	if len(pr.StatusCheckRollup) == 0 {
 		return ""
 	}
@@ -235,33 +235,50 @@ func (pr PR) ciStatus() string {
 	return "SUCCESS"
 }
 
-// StatusEmoji summarises the PR's state as a single emoji. It is not shown in
-// the list at the moment but kept (with ciStatus and the JSON fields it
-// reads) so the indicator can come back without re-deriving the rules.
-func (pr PR) StatusEmoji() string {
+// Status names what most needs attention on the PR, first match wins:
+// merged, closed, draft, conflicting, ci_failing, changes_requested,
+// approved, review_required, and open when nothing is flagged. It is part
+// of the `prs --json` output, so the labels are documented in skill/SKILL.md.
+func (pr PR) Status() string {
 	switch pr.State {
 	case "MERGED":
-		return "🟣"
+		return "merged"
 	case "CLOSED":
-		return "⚫"
+		return "closed"
 	}
 	// OPEN beyond this point.
 	if pr.IsDraft {
-		return "📝"
+		return "draft"
 	}
 	if pr.Mergeable == "CONFLICTING" {
-		return "⚠️"
+		return "conflicting"
 	}
-	if pr.ciStatus() == "FAILURE" {
-		return "❌"
+	if pr.CIStatus() == "FAILURE" {
+		return "ci_failing"
 	}
 	switch pr.ReviewDecision {
 	case "CHANGES_REQUESTED":
-		return "💬"
+		return "changes_requested"
 	case "APPROVED":
-		return "✅"
+		return "approved"
 	case "REVIEW_REQUIRED":
-		return "👀"
+		return "review_required"
 	}
-	return "🟢"
+	return "open"
 }
+
+var statusEmoji = map[string]string{
+	"merged":            "🟣",
+	"closed":            "⚫",
+	"draft":             "📝",
+	"conflicting":       "⚠️",
+	"ci_failing":        "❌",
+	"changes_requested": "💬",
+	"approved":          "✅",
+	"review_required":   "👀",
+	"open":              "🟢",
+}
+
+// StatusEmoji draws Status as a single emoji. It is not shown in the list at
+// the moment but kept so the indicator can come back without re-deriving it.
+func (pr PR) StatusEmoji() string { return statusEmoji[pr.Status()] }

@@ -28,3 +28,17 @@ The binary lands in `$(go env GOPATH)/bin` (usually `~/go/bin`); make sure that 
 Vim keys (`j`/`k`, `g`/`G`, `y` to copy) work too.
 
 Config is stored in `~/.config/prs/config.json`.
+
+## Scripts and agents
+
+When stdout is not a terminal, `prs` prints a tab-separated list and exits instead of opening the UI.
+
+| Command                     |                                                               |
+| --------------------------- | ------------------------------------------------------------- |
+| `prs --json`                | Your open PRs as JSON, with review and CI status and the Slack line |
+| `prs repos`                 | List tracked repos                                            |
+| `prs repos add OWNER/REPO…` | Start tracking repos                                          |
+| `prs repos rm OWNER/REPO…`  | Stop tracking repos                                           |
+| `prs skill install`         | Install a Claude Code skill that teaches Claude these commands |
+
+`prs skill` prints the skill instead, to read it or to give it to another agent. Re-run `prs skill install` after updating `prs` to refresh it.
