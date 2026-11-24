@@ -275,10 +275,6 @@ func ValidRepo(s string) bool {
 	return true
 }
 
-func (pr PR) FormatForDisplay() string {
-	return fmt.Sprintf("(+%d/-%d) #%d %s", pr.Additions, pr.Deletions, pr.Number, pr.Title)
-}
-
 // FormatForSlack renders the PR as a Slack-flavoured markdown line. The
 // link text is the bare PR number; the URL already identifies the repo. The
 // link sits before the title rather than at the end, because a pasted line
