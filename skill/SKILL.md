@@ -43,13 +43,14 @@ prs --json
 - `prs`: most recently updated first.
   - `status`: what most needs attention, first match wins:
     - `draft`: still a draft.
+    - `queued`: in the merge queue. GitHub merges it once the queue's checks pass, and takes it out of the queue if they fail.
     - `conflicting`: has merge conflicts with its base branch.
     - `ci_failing`: at least one check failed.
     - `changes_requested`: a reviewer asked for changes.
     - `approved`: approved, CI not failing. Check `ci` for `PENDING` before calling it ready to merge.
     - `review_required`: waiting on a reviewer.
     - `open`: nothing flagged.
-  - `ci`: `SUCCESS`, `PENDING`, `FAILURE`, or `""` when the repo runs no checks.
+  - `ci`: GitHub's combined result for the latest run of each check: `SUCCESS`, `PENDING`, `FAILURE`, or `""` when the repo runs no checks.
   - `review`: GitHub's review decision: `APPROVED`, `CHANGES_REQUESTED`, `REVIEW_REQUIRED`, or `""` when GitHub gives none, usually because the repo does not require reviews.
   - `mergeable`: `MERGEABLE`, `CONFLICTING`, or `UNKNOWN` when GitHub has not computed it yet.
   - `slack`: the line the user posts in Slack for this PR. When they ask for Slack lines, give these exactly as they are, one per line.

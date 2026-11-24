@@ -100,6 +100,7 @@ func TestSuggestReposDemo(t *testing.T) {
 
 func TestStatusOfEachDemoPR(t *testing.T) {
 	want := map[int]string{
+		143: "queued",
 		142: "approved",
 		141: "ci_failing",
 		140: "changes_requested",
@@ -112,5 +113,51 @@ func TestStatusOfEachDemoPR(t *testing.T) {
 		if got := pr.Status(); got != want[pr.Number] {
 			t.Errorf("#%d status = %q, want %q", pr.Number, got, want[pr.Number])
 		}
+	}
+}
+
+func TestCIStatusUsesGitHubsCombinedState(t *testing.T) {
+	cases := map[string]string{
+		"SUCCESS":  "SUCCESS",
+		"FAILURE":  "FAILURE",
+		"ERROR":    "FAILURE",
+		"PENDING":  "PENDING",
+		"EXPECTED": "PENDING",
+		"":         "",
+	}
+	for state, want := range cases {
+		if got := (PR{CheckState: state}).CIStatus(); got != want {
+			t.Errorf("CheckState %q: CIStatus = %q, want %q", state, got, want)
+		}
+	}
+}
+
+// The response below is trimmed from a real one for a PR in the merge queue
+// whose head commit had cancelled, superseded check runs. GitHub's combined
+// state ignores those, so the PR must come out queued with CI passing.
+func TestParsePRsReadsQueueAndCheckState(t *testing.T) {
+	out := []byte(`{"data":{"repository":{"id":"R_1"},"search":{"nodes":[
+		{"number":33529,"title":"Queued","additions":10,"deletions":2,"url":"u","state":"OPEN",
+		 "isDraft":false,"mergeable":"MERGEABLE","reviewDecision":"APPROVED",
+		 "updatedAt":"2026-11-24T07:57:42Z","isInMergeQueue":true,
+		 "commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"SUCCESS"}}}]}},
+		{"number":2,"title":"No checks","additions":0,"deletions":0,"url":"u2","state":"OPEN",
+		 "isDraft":true,"mergeable":"UNKNOWN","reviewDecision":null,
+		 "updatedAt":"2026-11-20T08:00:00Z","isInMergeQueue":false,
+		 "commits":{"nodes":[{"commit":{"statusCheckRollup":null}}]}},
+		{}
+	]}}}`)
+	prs, err := parsePRs(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prs) != 2 {
+		t.Fatalf("expected 2 PRs (the empty node skipped), got %d: %+v", len(prs), prs)
+	}
+	if q := prs[0]; !q.InMergeQueue || q.CIStatus() != "SUCCESS" || q.Status() != "queued" {
+		t.Errorf("queued PR: inQueue=%v ci=%q status=%q", q.InMergeQueue, q.CIStatus(), q.Status())
+	}
+	if d := prs[1]; d.CheckState != "" || d.ReviewDecision != "" || d.Status() != "draft" {
+		t.Errorf("draft PR: checks=%q review=%q status=%q", d.CheckState, d.ReviewDecision, d.Status())
 	}
 }

@@ -22,25 +22,32 @@ func demoPRs(repo string) []PR {
 func demoAll() []PR {
 	return []PR{
 		{
+			Number: 143, Title: "Waiting in the merge queue",
+			Additions: 6, Deletions: 6,
+			URL:   "https://github.com/example/repo/pull/143",
+			State: "OPEN", Mergeable: "MERGEABLE", ReviewDecision: "APPROVED",
+			CheckState: "SUCCESS", InMergeQueue: true,
+		},
+		{
 			Number: 142, Title: "Approved, ready to merge",
 			Additions: 12, Deletions: 3,
 			URL:   "https://github.com/example/repo/pull/142",
 			State: "OPEN", Mergeable: "MERGEABLE", ReviewDecision: "APPROVED",
-			StatusCheckRollup: []StatusCheck{{Conclusion: "SUCCESS", Status: "COMPLETED"}},
+			CheckState: "SUCCESS",
 		},
 		{
 			Number: 141, Title: "CI is failing here",
 			Additions: 8, Deletions: 2,
 			URL:   "https://github.com/example/repo/pull/141",
 			State: "OPEN", Mergeable: "MERGEABLE",
-			StatusCheckRollup: []StatusCheck{{Conclusion: "FAILURE", Status: "COMPLETED"}},
+			CheckState: "FAILURE",
 		},
 		{
 			Number: 140, Title: "Reviewer requested changes",
 			Additions: 30, Deletions: 12,
 			URL:   "https://github.com/example/repo/pull/140",
 			State: "OPEN", Mergeable: "MERGEABLE", ReviewDecision: "CHANGES_REQUESTED",
-			StatusCheckRollup: []StatusCheck{{Conclusion: "SUCCESS", Status: "COMPLETED"}},
+			CheckState: "SUCCESS",
 		},
 		{
 			Number: 139, Title: "Waiting on a reviewer",

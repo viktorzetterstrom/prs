@@ -36,8 +36,8 @@ func TestJSONListsEveryDemoPR(t *testing.T) {
 	if !reflect.DeepEqual(got.Repos, github.DemoRepos) {
 		t.Errorf("repos = %v, want %v", got.Repos, github.DemoRepos)
 	}
-	if len(got.PRs) != 7 {
-		t.Fatalf("expected the 7 demo PRs, got %d", len(got.PRs))
+	if len(got.PRs) != 8 {
+		t.Fatalf("expected the 8 demo PRs, got %d", len(got.PRs))
 	}
 	for _, pr := range got.PRs {
 		if pr.Repo == "" || pr.Status == "" || pr.URL == "" {
@@ -69,7 +69,7 @@ func TestWithoutTerminalPrintsPlainList(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	if len(lines) != 7 {
+	if len(lines) != 8 {
 		t.Fatalf("expected one line per demo PR, got %d:\n%s", len(lines), stdout)
 	}
 	for _, l := range lines {

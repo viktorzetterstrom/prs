@@ -12,28 +12,30 @@ import (
 	"time"
 )
 
-type StatusCheck struct {
-	Conclusion string `json:"conclusion"`
-	State      string `json:"state"`
-	Status     string `json:"status"`
-}
-
 type PR struct {
-	Number            int           `json:"number"`
-	Title             string        `json:"title"`
-	Additions         int           `json:"additions"`
-	Deletions         int           `json:"deletions"`
-	URL               string        `json:"url"`
-	State             string        `json:"state"`
-	IsDraft           bool          `json:"isDraft"`
-	Mergeable         string        `json:"mergeable"`
-	ReviewDecision    string        `json:"reviewDecision"`
-	StatusCheckRollup []StatusCheck `json:"statusCheckRollup"`
-	UpdatedAt         time.Time     `json:"updatedAt"`
+	Number         int
+	Title          string
+	Additions      int
+	Deletions      int
+	URL            string
+	State          string
+	IsDraft        bool
+	Mergeable      string
+	ReviewDecision string
+	UpdatedAt      time.Time
 
-	// Repo is the OWNER/REPO the PR belongs to. `gh pr list` does not include
-	// it in its JSON output, so GetPRs stamps it after each per-repo call.
-	Repo string `json:"-"`
+	// CheckState is GitHub's combined check result for the head commit:
+	// SUCCESS, FAILURE, ERROR, PENDING or EXPECTED, or "" when no checks
+	// ran. GitHub only counts the latest run of each check, so a run that
+	// was cancelled because a newer one replaced it does not fail the PR.
+	CheckState string
+
+	// InMergeQueue is set while the PR waits in the repo's merge queue.
+	InMergeQueue bool
+
+	// Repo is the OWNER/REPO the PR belongs to. GetPRs stamps it after each
+	// per-repo call.
+	Repo string
 }
 
 // ShortRepo returns the repo name without its owner, for compact display.
@@ -52,7 +54,67 @@ var DemoMode bool
 // can be previewed without a config file.
 var DemoRepos = []string{"example/platform", "example/config"}
 
-const jsonFields = "number,title,additions,deletions,url,state,isDraft,mergeable,reviewDecision,statusCheckRollup,updatedAt"
+// prQuery fetches the caller's open PRs in one repo. It goes through the
+// GraphQL API rather than `gh pr list` because only GraphQL has the merge
+// queue flag and GitHub's own combined check result. The repository field
+// is there so a repo that does not exist fails the query; search alone
+// would just come back empty.
+const prQuery = `query($owner: String!, $name: String!, $q: String!) {
+  repository(owner: $owner, name: $name) { id }
+  search(query: $q, type: ISSUE, first: 100) {
+    nodes {
+      ... on PullRequest {
+        number title additions deletions url state isDraft mergeable
+        reviewDecision updatedAt isInMergeQueue
+        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      }
+    }
+  }
+}`
+
+// prNode is one PullRequest in prQuery's response.
+type prNode struct {
+	Number         int       `json:"number"`
+	Title          string    `json:"title"`
+	Additions      int       `json:"additions"`
+	Deletions      int       `json:"deletions"`
+	URL            string    `json:"url"`
+	State          string    `json:"state"`
+	IsDraft        bool      `json:"isDraft"`
+	Mergeable      string    `json:"mergeable"`
+	ReviewDecision string    `json:"reviewDecision"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+	IsInMergeQueue bool      `json:"isInMergeQueue"`
+	Commits        struct {
+		Nodes []struct {
+			Commit struct {
+				StatusCheckRollup *struct {
+					State string `json:"state"`
+				} `json:"statusCheckRollup"`
+			} `json:"commit"`
+		} `json:"nodes"`
+	} `json:"commits"`
+}
+
+func (n prNode) pr() PR {
+	pr := PR{
+		Number:         n.Number,
+		Title:          n.Title,
+		Additions:      n.Additions,
+		Deletions:      n.Deletions,
+		URL:            n.URL,
+		State:          n.State,
+		IsDraft:        n.IsDraft,
+		Mergeable:      n.Mergeable,
+		ReviewDecision: n.ReviewDecision,
+		UpdatedAt:      n.UpdatedAt,
+		InMergeQueue:   n.IsInMergeQueue,
+	}
+	if c := n.Commits.Nodes; len(c) > 0 && c[0].Commit.StatusCheckRollup != nil {
+		pr.CheckState = c[0].Commit.StatusCheckRollup.State
+	}
+	return pr
+}
 
 // RepoError is a fetch failure scoped to one repository, so a single bad or
 // unreachable repo does not hide results from the others.
@@ -107,14 +169,36 @@ func getRepoPRs(repo string) ([]PR, error) {
 		return demoPRs(repo), nil
 	}
 
-	output, err := runGH("pr", "list", "--repo", repo, "--search", "author:@me", "--json", jsonFields)
+	owner, name, _ := strings.Cut(repo, "/")
+	output, err := runGH("api", "graphql",
+		"-f", "owner="+owner,
+		"-f", "name="+name,
+		"-f", "q=repo:"+repo+" is:pr is:open author:@me",
+		"-f", "query="+prQuery)
 	if err != nil {
 		return nil, err
 	}
+	return parsePRs(output)
+}
 
-	var prs []PR
-	if err := json.Unmarshal(output, &prs); err != nil {
+func parsePRs(output []byte) ([]PR, error) {
+	var resp struct {
+		Data struct {
+			Search struct {
+				Nodes []prNode `json:"nodes"`
+			} `json:"search"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(output, &resp); err != nil {
 		return nil, fmt.Errorf("failed to parse PR data: %w", err)
+	}
+	var prs []PR
+	for _, n := range resp.Data.Search.Nodes {
+		// The search is limited to PRs, but a node of another type would
+		// decode as an empty object.
+		if n.Number != 0 {
+			prs = append(prs, n.pr())
+		}
 	}
 	return prs, nil
 }
@@ -208,38 +292,24 @@ func (pr PR) FormatForSlack() string {
 		pr.Title)
 }
 
-// CIStatus rolls up StatusCheckRollup into FAILURE / PENDING / SUCCESS / "".
-// Empty means no checks are configured.
+// CIStatus folds CheckState into FAILURE / PENDING / SUCCESS / "". Empty
+// means no checks ran.
 func (pr PR) CIStatus() string {
-	if len(pr.StatusCheckRollup) == 0 {
-		return ""
-	}
-	pending := false
-	for _, c := range pr.StatusCheckRollup {
-		switch c.Conclusion {
-		case "FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE":
-			return "FAILURE"
-		}
-		switch c.State {
-		case "FAILURE", "ERROR":
-			return "FAILURE"
-		case "PENDING", "EXPECTED":
-			pending = true
-		}
-		// CheckRun: status != COMPLETED means still running
-		if c.Conclusion == "" && c.Status != "" && c.Status != "COMPLETED" {
-			pending = true
-		}
-	}
-	if pending {
+	switch pr.CheckState {
+	case "FAILURE", "ERROR":
+		return "FAILURE"
+	case "PENDING", "EXPECTED":
 		return "PENDING"
+	case "SUCCESS":
+		return "SUCCESS"
 	}
-	return "SUCCESS"
+	return ""
 }
 
 // Status names what most needs attention on the PR, first match wins:
-// merged, closed, draft, conflicting, ci_failing, changes_requested,
-// approved, review_required, and open when nothing is flagged. It is part
+// merged, closed, draft, queued, conflicting, ci_failing,
+// changes_requested, approved, review_required, and open when nothing is
+// flagged. It is part
 // of the `prs --json` output, so the labels are documented in skill/SKILL.md.
 func (pr PR) Status() string {
 	switch pr.State {
@@ -251,6 +321,11 @@ func (pr PR) Status() string {
 	// OPEN beyond this point.
 	if pr.IsDraft {
 		return "draft"
+	}
+	if pr.InMergeQueue {
+		// GitHub merges it once the queue's own checks pass, and takes it
+		// out of the queue if they fail.
+		return "queued"
 	}
 	if pr.Mergeable == "CONFLICTING" {
 		return "conflicting"

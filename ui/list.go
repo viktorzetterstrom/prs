@@ -62,6 +62,7 @@ type statusLabel struct {
 // is flagged and no review is required, so it has no label.
 var statusLabels = map[string]statusLabel{
 	"draft":             {"draft", lipgloss.NewStyle().Foreground(lipgloss.Color("245"))},
+	"queued":            {"queued", lipgloss.NewStyle().Foreground(lipgloss.Color("14"))},
 	"conflicting":       {"conflicts", lipgloss.NewStyle().Foreground(lipgloss.Color("9"))},
 	"ci_failing":        {"ci failing", lipgloss.NewStyle().Foreground(lipgloss.Color("9"))},
 	"changes_requested": {"changes requested", lipgloss.NewStyle().Foreground(lipgloss.Color("11"))},
