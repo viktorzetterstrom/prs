@@ -40,5 +40,6 @@ When stdout is not a terminal, `prs` prints a tab-separated list and exits inste
 | `prs repos add OWNER/REPO…` | Start tracking repos                                          |
 | `prs repos rm OWNER/REPO…`  | Stop tracking repos                                           |
 | `prs skill install`         | Install a Claude Code skill that teaches Claude these commands |
+| `prs --version`             | Print the installed version                                   |
 
 `prs skill` prints the skill instead, to read it or to give it to another agent. Re-run `prs skill install` after updating `prs` to refresh it.

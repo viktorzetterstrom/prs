@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"slices"
 
 	"github.com/mattn/go-isatty"
@@ -63,7 +64,14 @@ func run(args []string, stdout, stderr io.Writer, interactive bool) error {
 	demo := fs.Bool("demo", false, "Populate with fake PRs from fake repos; never touches the config")
 	reset := fs.Bool("reset", false, "Delete the saved config and start over with the repo picker")
 	asJSON := fs.Bool("json", false, "Print the PR list as JSON and exit")
+	showVersion := fs.Bool("version", false, "Print the version and exit")
 	fs.Parse(args) // ExitOnError: exits itself on a bad flag or --help.
+
+	if *showVersion {
+		info, _ := debug.ReadBuildInfo()
+		fmt.Fprintln(stdout, formatVersion(info))
+		return nil
+	}
 
 	github.DemoMode = *demo
 
@@ -116,4 +124,14 @@ func resolveRepos(currentRepo string) (repos []string, configExists bool, err er
 		return []string{currentRepo}, found, nil
 	}
 	return nil, found, nil
+}
+
+// formatVersion names the build. `go install …@version` and, since Go 1.24,
+// `go build` in a git checkout both stamp the module version: a tag, or a
+// pseudo-version ending in the commit, with +dirty for uncommitted changes.
+func formatVersion(info *debug.BuildInfo) string {
+	if info == nil || info.Main.Version == "" {
+		return "prs (devel)"
+	}
+	return "prs " + info.Main.Version
 }

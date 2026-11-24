@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -230,5 +231,24 @@ func TestUnknownCommandIsUsageError(t *testing.T) {
 		if _, _, err := runCLI(t, args...); !errors.As(err, new(usageError)) {
 			t.Errorf("%v: expected a usage error, got %v", args, err)
 		}
+	}
+}
+
+func TestVersion(t *testing.T) {
+	stdout, _, err := runCLI(t, "--version")
+	if err != nil || !strings.HasPrefix(stdout, "prs ") {
+		t.Fatalf("--version = %q, %v", stdout, err)
+	}
+	cases := map[string]string{
+		"v0.0.0-20261124080239-015b1158ff41": "prs v0.0.0-20261124080239-015b1158ff41",
+		"":                                   "prs (devel)",
+	}
+	for v, want := range cases {
+		if got := formatVersion(&debug.BuildInfo{Main: debug.Module{Version: v}}); got != want {
+			t.Errorf("version %q: got %q, want %q", v, got, want)
+		}
+	}
+	if got := formatVersion(nil); got != "prs (devel)" {
+		t.Errorf("no build info: got %q", got)
 	}
 }
