@@ -14,8 +14,6 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
-	"github.com/viktorzetterstrom/prs/config"
 	"github.com/viktorzetterstrom/prs/github"
 )
 
@@ -52,103 +50,12 @@ type listRow struct {
 	spacer  bool
 }
 
-// statusLabel is the word shown after a PR's title for its github Status.
-type statusLabel struct {
-	text  string
-	style lipgloss.Style
-}
-
-// statusLabels covers the statuses an open PR can have. "open" means nothing
-// is flagged and no review is required, so it has no label.
-var statusLabels = map[string]statusLabel{
-	"draft":             {"draft", lipgloss.NewStyle().Foreground(lipgloss.Color("245"))},
-	"queued":            {"queued", lipgloss.NewStyle().Foreground(lipgloss.Color("14"))},
-	"conflicting":       {"conflicts", lipgloss.NewStyle().Foreground(lipgloss.Color("9"))},
-	"ci_failing":        {"ci failing", lipgloss.NewStyle().Foreground(lipgloss.Color("9"))},
-	"changes_requested": {"changes requested", lipgloss.NewStyle().Foreground(lipgloss.Color("11"))},
-	"approved":          {"approved", lipgloss.NewStyle().Foreground(lipgloss.Color("10"))},
-	"review_required":   {"needs review", lipgloss.NewStyle().Foreground(lipgloss.Color("245"))},
-}
-
-// prLead is the part of a row before the title: size, number and the spaces
-// after each. The order matches the copied Slack line.
-func prLead(pr github.PR) (stats, number string, width int) {
-	stats = fmt.Sprintf("(+%d/-%d)", pr.Additions, pr.Deletions)
-	number = fmt.Sprintf("[#%d]", pr.Number)
-	return stats, number, ansi.StringWidth(stats) + 1 + ansi.StringWidth(number) + 1
-}
-
-// rowLayout is shared by every PR row so the status labels line up in one
-// column. labelCol is where that column starts, counted from the first cell
-// after the row's 4-cell prefix (4 spaces of padding, or 2 spaces + "➤ ").
-// Titles are cut to end before it only when truncate is set.
-type rowLayout struct {
-	labelCol int
-	truncate bool
-}
-
-// labelGap is the space between the end of the longest title and the labels.
-const labelGap = 2
-
-// newRowLayout puts the label column just after the longest row, so it sits
-// close to the titles on a wide terminal. When that does not fit in width,
-// the column moves left to leave room for the widest label and titles are
-// truncated to meet it. 1 trailing cell is left as breathing room. A width of
-// zero (unknown) never truncates.
-func newRowLayout(prs []github.PR, width int) rowLayout {
-	longest, widestLabel := 0, 0
-	for _, pr := range prs {
-		_, _, lead := prLead(pr)
-		longest = max(longest, lead+ansi.StringWidth(pr.Title))
-		if l, ok := statusLabels[pr.Status()]; ok {
-			widestLabel = max(widestLabel, ansi.StringWidth(l.text))
-		}
-	}
-	if width <= 0 {
-		return rowLayout{labelCol: longest + labelGap}
-	}
-	reserve := 0
-	if widestLabel > 0 {
-		reserve = labelGap + widestLabel
-	}
-	return rowLayout{labelCol: min(longest, width-4-1-reserve) + labelGap, truncate: true}
-}
-
-// renderPR draws one PR line: size, number, title, then its status label in
-// the shared column. The title is truncated to end before that column.
-func renderPR(pr github.PR, selected bool, layout rowLayout) string {
-	stats, number, lead := prLead(pr)
-	titleEnd := layout.labelCol - labelGap
-
-	title := pr.Title
-	if budget := titleEnd - lead; layout.truncate && budget > 0 && ansi.StringWidth(title) > budget {
-		// Cut one cell short and drop trailing spaces so the ellipsis
-		// follows a letter: "Conflicts…", not "Conflicts …".
-		title = strings.TrimRight(ansi.Truncate(title, budget-1, ""), " ") + "…"
-	}
-
-	str := statsStyle.Render(stats) + " " + numberStyle.Render(number) + " " + title
-	if l, ok := statusLabels[pr.Status()]; ok {
-		pad := max(labelGap, layout.labelCol-lead-ansi.StringWidth(title))
-		str += strings.Repeat(" ", pad) + l.style.Render(l.text)
-	}
-	if selected {
-		return selectedItemStyle.Render("➤ " + str)
-	}
-	return itemStyle.Render(str)
-}
-
 type tickMsg time.Time
 
 type refreshMsg struct {
 	gen  int
 	prs  []github.PR
 	errs []github.RepoError
-}
-
-type suggestMsg struct {
-	repos []string
-	err   error
 }
 
 type resetCopiedMsg struct{}
@@ -249,11 +156,6 @@ func fetchPRs(repos []string, gen int) tea.Cmd {
 	}
 }
 
-func fetchSuggestions() tea.Msg {
-	repos, err := github.SuggestRepos()
-	return suggestMsg{repos: repos, err: err}
-}
-
 // busy reports whether anything is in flight, which is when the spinner
 // animates. Spinner ticks are dropped once nothing is loading.
 func (m model) busy() bool { return m.view.loading || m.suggestLoading }
@@ -264,14 +166,6 @@ func (m *model) startFetch() tea.Cmd {
 	}
 	m.view.loading = true
 	return tea.Batch(fetchPRs(m.repos, m.gen), m.spinner.Tick)
-}
-
-func (m *model) ensureSuggestions() tea.Cmd {
-	if m.suggestFetched || m.suggestLoading {
-		return nil
-	}
-	m.suggestLoading = true
-	return tea.Batch(fetchSuggestions, m.spinner.Tick)
 }
 
 // Init only returns commands. The loading flags they correspond to are set
@@ -354,108 +248,6 @@ func (m *model) ensureLoaded() tea.Cmd {
 	return m.startFetch()
 }
 
-func (m *model) saveConfig() {
-	if github.DemoMode {
-		// Demo mode must never touch the real config file; the in-memory
-		// repo list still changes so the UI can be exercised.
-		return
-	}
-	m.cfgErr = config.Config{Repos: m.repos}.Save()
-}
-
-// applyRepoChange persists the repo list and invalidates the view so the
-// next visit refetches against the new set.
-func (m *model) applyRepoChange() {
-	m.cfgDirty = true
-	m.gen++
-	m.saveConfig()
-	m.view.reset()
-	if m.cfgCursor >= m.configRowCount() {
-		m.cfgCursor = max(0, m.configRowCount()-1)
-	}
-}
-
-const suggestedTitle = "suggested from your recent prs"
-
-// repoSection is one group of rows on the config screen.
-type repoSection struct {
-	title string
-	repos []string
-}
-
-// sections groups the picker rows by where they came from. Order inside each
-// section is stable: saved repos keep their config order (additions by name
-// append), and suggestions keep the order the search returned them in. A repo
-// appears only in the first section that lists it. Toggling a repo changes its
-// checkmark, not its row, so the cursor stays on what the user is looking at.
-func (m model) sections() []repoSection {
-	var secs []repoSection
-	seen := map[string]bool{}
-	add := func(title string, repos []string) {
-		var rows []string
-		for _, r := range repos {
-			if r != "" && !seen[r] {
-				seen[r] = true
-				rows = append(rows, r)
-			}
-		}
-		if len(rows) > 0 {
-			secs = append(secs, repoSection{title: title, repos: rows})
-		}
-	}
-	add("saved", m.savedRepos)
-	add("current directory", []string{m.currentRepo})
-	add(suggestedTitle, m.suggestions)
-	return secs
-}
-
-// configRows flattens sections into the cursor's row order.
-func (m model) configRows() []string {
-	var rows []string
-	for _, sec := range m.sections() {
-		rows = append(rows, sec.repos...)
-	}
-	return rows
-}
-
-// trackRepo adds repo to the tracked set, keeping m.repos in display order so
-// the config file reads top to bottom like the picker does.
-func (m *model) trackRepo(repo string) {
-	rows := m.configRows()
-	if !slices.Contains(rows, repo) {
-		m.savedRepos = append(m.savedRepos, repo)
-		rows = m.configRows()
-	}
-	var repos []string
-	for _, r := range rows {
-		if r == repo || slices.Contains(m.repos, r) {
-			repos = append(repos, r)
-		}
-	}
-	m.repos = repos
-}
-
-func (m model) configRowCount() int { return len(m.configRows()) }
-
-func (m *model) leaveConfig() tea.Cmd {
-	m.mode = modeList
-	if m.firstRun && len(m.repos) > 0 {
-		if !m.cfgDirty {
-			// User accepted the preselected repos: persist them so the picker
-			// does not greet them again next time.
-			m.saveConfig()
-		}
-		// The first visit ends once the user leaves with something selected.
-		m.firstRun = false
-	}
-	if !m.cfgDirty {
-		return m.ensureLoaded()
-	}
-	m.cfgDirty = false
-	m.syncList()
-	return m.ensureLoaded()
-}
-
 // moveCursor applies the shared navigation keys (arrows, vim j/k, g/G,
 // Home/End, PgUp/PgDn, Ctrl+U/Ctrl+D) to a cursor over n rows. It reports
 // whether the key was a navigation key.
@@ -488,66 +280,6 @@ func isNavKey(key string) bool {
 		return true
 	}
 	return false
-}
-
-func (m model) updateConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	rows := m.configRows()
-	key := msg.String()
-	if cursor, ok := moveCursor(key, m.cfgCursor, len(rows), 5); ok {
-		m.cfgCursor = cursor
-		return m, nil
-	}
-	switch key {
-	case "q", "ctrl+c":
-		return m, tea.Quit
-	case "esc", "enter", "c":
-		// Checklist convention: space toggles, enter confirms.
-		return m, m.leaveConfig()
-	case " ":
-		if m.cfgCursor < len(rows) {
-			repo := rows[m.cfgCursor]
-			if idx := slices.Index(m.repos, repo); idx >= 0 {
-				m.repos = slices.Delete(m.repos, idx, idx+1)
-			} else {
-				m.trackRepo(repo)
-			}
-			m.applyRepoChange()
-		}
-	case "a":
-		m.mode = modeAddRepo
-		m.cfgErr = nil
-		m.input.SetValue("")
-		return m, m.input.Focus()
-	}
-	return m, nil
-}
-
-func (m model) updateAddRepo(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
-		return m, tea.Quit
-	case "esc":
-		m.mode = modeConfig
-		m.input.Blur()
-		return m, nil
-	case "enter":
-		repo := strings.TrimSpace(m.input.Value())
-		if !github.ValidRepo(repo) {
-			m.cfgErr = fmt.Errorf("expected owner/repo, got %q", repo)
-			return m, nil
-		}
-		m.mode = modeConfig
-		m.input.Blur()
-		if !slices.Contains(m.repos, repo) {
-			m.trackRepo(repo)
-			m.applyRepoChange()
-		}
-		m.cfgCursor = slices.Index(m.configRows(), repo)
-		return m, nil
-	}
-	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
-	return m, cmd
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -695,90 +427,6 @@ func hints(pairs ...string) string {
 
 func (m model) renderHeader() string {
 	return headerStyle.Render(titleStyle.Render("open prs"))
-}
-
-func (m model) viewConfig() string {
-	var b strings.Builder
-	b.WriteString(headerStyle.Render(titleStyle.Render("config")))
-	b.WriteString("\n")
-
-	if github.DemoMode {
-		b.WriteString(timestampStyle.Render("demo mode: changes here are not saved."))
-		b.WriteString("\n\n")
-	}
-
-	secs := m.sections()
-	if len(secs) == 0 && !m.suggestLoading {
-		b.WriteString(itemStyle.Render("no repos yet. press a to add one."))
-		b.WriteString("\n")
-	}
-	row := 0
-	for si, sec := range secs {
-		if si > 0 {
-			b.WriteString("\n")
-		}
-		b.WriteString(sectionStyle.Render(sec.title))
-		b.WriteString("\n")
-		for _, repo := range sec.repos {
-			mark := uncheckedStyle.Render("○")
-			if slices.Contains(m.repos, repo) {
-				mark = checkedStyle.Render("✓")
-			}
-			line := mark + " " + repo
-			if row == m.cfgCursor && m.mode == modeConfig {
-				b.WriteString(selectedItemStyle.Render("➤ " + line))
-			} else {
-				b.WriteString(itemStyle.Render(line))
-			}
-			b.WriteString("\n")
-			row++
-		}
-	}
-
-	// While suggestions load, show their section heading with a bare spinner
-	// beneath, like the startup skeleton, so the section is visible from the
-	// start and fills in place. Afterwards the section renders through
-	// sections() above; only the empty and error cases need a line here.
-	hasSuggestedSection := false
-	for _, sec := range secs {
-		if sec.title == suggestedTitle {
-			hasSuggestedSection = true
-		}
-	}
-	switch {
-	case m.suggestLoading && !hasSuggestedSection:
-		if len(secs) > 0 {
-			b.WriteString("\n")
-		}
-		b.WriteString(sectionStyle.Render(suggestedTitle))
-		b.WriteString("\n")
-		b.WriteString(itemStyle.Render(strings.TrimRight(m.spinner.View(), " ")))
-		b.WriteString("\n")
-	case m.suggestErr != nil:
-		b.WriteString("\n" + errorStyle.Render(fmt.Sprintf("⚠ could not load suggestions: %v", m.suggestErr)))
-		b.WriteString("\n")
-	case m.suggestFetched && len(m.suggestions) == 0:
-		b.WriteString("\n" + timestampStyle.Render("no recent pr activity found to suggest from."))
-		b.WriteString("\n")
-	}
-
-	b.WriteString("\n")
-	if m.mode == modeAddRepo {
-		b.WriteString(itemStyle.Render("add repo (owner/repo): " + m.input.View()))
-		b.WriteString("\n")
-		if m.cfgErr != nil {
-			b.WriteString(errorStyle.Render(fmt.Sprintf("⚠ %v", m.cfgErr)))
-			b.WriteString("\n")
-		}
-		b.WriteString(hints("enter", "add", "esc", "cancel"))
-	} else {
-		if m.cfgErr != nil {
-			b.WriteString(errorStyle.Render(fmt.Sprintf("⚠ could not save config: %v", m.cfgErr)))
-			b.WriteString("\n")
-		}
-		b.WriteString(hints("↑/↓", "move", "space", "toggle", "a", "add by name", "enter", "done"))
-	}
-	return b.String()
 }
 
 func (m model) View() string {
