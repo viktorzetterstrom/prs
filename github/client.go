@@ -192,7 +192,7 @@ func ValidRepo(s string) bool {
 }
 
 func (pr PR) FormatForDisplay() string {
-	return fmt.Sprintf("#%d (+%d/-%d) %s", pr.Number, pr.Additions, pr.Deletions, pr.Title)
+	return fmt.Sprintf("(+%d/-%d) #%d %s", pr.Additions, pr.Deletions, pr.Number, pr.Title)
 }
 
 // FormatForSlack renders the PR as a Slack-flavoured markdown line. The

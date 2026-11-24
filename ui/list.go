@@ -48,11 +48,11 @@ type listRow struct {
 	spacer  bool
 }
 
-// renderPR draws one PR line. The title is truncated so the trailing PR
-// number is always visible: both the selected and unselected rows consume 4
-// cells before content (4 spaces of padding, or 2 spaces + "➤ "), two
-// single-space separators sit between the three segments, and 1 trailing
-// cell is left as breathing room.
+// renderPR draws one PR line in the same order as the copied Slack line:
+// size, number, title. The title comes last and is truncated to fit: both
+// the selected and unselected rows consume 4 cells before content (4 spaces
+// of padding, or 2 spaces + "➤ "), two single-space separators sit between
+// the three segments, and 1 trailing cell is left as breathing room.
 func renderPR(pr github.PR, selected bool, width int) string {
 	statsRaw := fmt.Sprintf("(+%d/-%d)", pr.Additions, pr.Deletions)
 	numberRaw := fmt.Sprintf("[#%d]", pr.Number)
@@ -65,7 +65,7 @@ func renderPR(pr github.PR, selected bool, width int) string {
 		}
 	}
 
-	str := statsStyle.Render(statsRaw) + " " + title + " " + numberStyle.Render(numberRaw)
+	str := statsStyle.Render(statsRaw) + " " + numberStyle.Render(numberRaw) + " " + title
 	if selected {
 		return selectedItemStyle.Render("➤ " + str)
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/viktorzetterstrom/prs/config"
 	"github.com/viktorzetterstrom/prs/github"
 )
@@ -659,5 +660,22 @@ func TestFirstRunFirstFrameShowsSuggestedLoading(t *testing.T) {
 	}
 	if m.Init() == nil {
 		t.Fatal("Init should start the suggestion lookup")
+	}
+}
+
+func TestPRRowMatchesSlackOrder(t *testing.T) {
+	pr := github.PR{Number: 42, Title: "Fix the thing", Additions: 1, Deletions: 2}
+	got := ansi.Strip(renderPR(pr, false, 0))
+	if want := "    (+1/-2) [#42] Fix the thing"; got != want {
+		t.Fatalf("row = %q, want %q", got, want)
+	}
+
+	pr.Title = strings.Repeat("long title ", 20)
+	got = ansi.Strip(renderPR(pr, true, 40))
+	if !strings.HasPrefix(got, "  ➤ (+1/-2) [#42] long") || !strings.HasSuffix(got, "…") {
+		t.Fatalf("selected row should keep size and number and truncate the title: %q", got)
+	}
+	if w := ansi.StringWidth(got); w >= 40 {
+		t.Fatalf("row is %d cells wide, want under 40: %q", w, got)
 	}
 }
