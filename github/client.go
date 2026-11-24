@@ -268,19 +268,3 @@ func (pr PR) Status() string {
 	}
 	return "open"
 }
-
-var statusEmoji = map[string]string{
-	"merged":            "🟣",
-	"closed":            "⚫",
-	"draft":             "📝",
-	"conflicting":       "⚠️",
-	"ci_failing":        "❌",
-	"changes_requested": "💬",
-	"approved":          "✅",
-	"review_required":   "👀",
-	"open":              "🟢",
-}
-
-// StatusEmoji draws Status as a single emoji. It is not shown in the list at
-// the moment but kept so the indicator can come back without re-deriving it.
-func (pr PR) StatusEmoji() string { return statusEmoji[pr.Status()] }

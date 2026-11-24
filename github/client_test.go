@@ -112,8 +112,5 @@ func TestStatusOfEachDemoPR(t *testing.T) {
 		if got := pr.Status(); got != want[pr.Number] {
 			t.Errorf("#%d status = %q, want %q", pr.Number, got, want[pr.Number])
 		}
-		if pr.StatusEmoji() == "" {
-			t.Errorf("#%d status %q has no emoji", pr.Number, pr.Status())
-		}
 	}
 }

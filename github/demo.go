@@ -3,7 +3,7 @@ package github
 import "time"
 
 // demoPRs returns canned data for the --demo flag. Each entry is designed to
-// exercise a distinct branch of StatusEmoji so the TUI shows every state.
+// exercise a distinct branch of Status so the TUI shows every state.
 // The set is split across DemoRepos by PR number parity so the multi-repo
 // view interleaves rows from both.
 func demoPRs(repo string) []PR {

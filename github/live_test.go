@@ -18,7 +18,7 @@ func TestGetPRsLive(t *testing.T) {
 	}
 	t.Logf("%d open PRs", len(prs))
 	for _, pr := range prs {
-		t.Logf("  %s %-16s %s", pr.StatusEmoji(), pr.ShortRepo(), pr.FormatForDisplay())
+		t.Logf("  %-17s %-16s %s", pr.Status(), pr.ShortRepo(), pr.FormatForDisplay())
 	}
 
 	suggested, err := SuggestRepos()
