@@ -16,6 +16,20 @@ import (
 	"github.com/viktorzetterstrom/prs/github"
 )
 
+// TestMain points CLAUDE_CONFIG_DIR at an empty directory, so the skill
+// refresh in run never touches the real ~/.claude. Tests that care about
+// the skill set their own directory.
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "prs-test-claude-")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("CLAUDE_CONFIG_DIR", dir)
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
+
 // runCLI runs prs as if stdout were a pipe, which is how an agent calls it.
 func runCLI(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
@@ -250,5 +264,34 @@ func TestVersion(t *testing.T) {
 	}
 	if got := formatVersion(nil); got != "prs (devel)" {
 		t.Errorf("no build info: got %q", got)
+	}
+}
+
+func TestStaleInstalledSkillIsRefreshed(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	path := filepath.Join(dir, "skills", "prs", "SKILL.md")
+
+	// Not installed: running prs must not install it.
+	if _, _, err := runCLI(t, "repos"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("prs installed the skill without being asked: %v", err)
+	}
+
+	// Installed by an older prs: the next run brings it up to date.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("old skill"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runCLI(t, "repos"); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(path); string(data) != skillDoc {
+		t.Fatalf("stale skill was not refreshed: %.40q", data)
 	}
 }

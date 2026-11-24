@@ -42,4 +42,4 @@ When stdout is not a terminal, `prs` prints a tab-separated list and exits inste
 | `prs skill install`         | Install a Claude Code skill that teaches Claude these commands |
 | `prs --version`             | Print the installed version                                   |
 
-`prs skill` prints the skill instead, to read it or to give it to another agent. Re-run `prs skill install` after updating `prs` to refresh it.
+`prs skill` prints the skill instead, to read it or to give it to another agent. Once installed, the skill stays in step with `prs`: after an update, the next run of `prs` refreshes it.

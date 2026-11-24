@@ -74,6 +74,9 @@ func run(args []string, stdout, stderr io.Writer, interactive bool) error {
 	}
 
 	github.DemoMode = *demo
+	if !github.DemoMode {
+		refreshSkill()
+	}
 
 	if *reset {
 		if err := config.Remove(); err != nil {
