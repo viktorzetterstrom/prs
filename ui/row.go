@@ -9,22 +9,40 @@ import (
 	"github.com/viktorzetterstrom/prs/github"
 )
 
+// GitHub's own colours, so a status reads here the way it does on
+// github.com: the foreground tokens of its Primer design system
+// (@primer/primitives 11.10.0), with the light and dark theme values.
+var (
+	ghSuccess   = lipgloss.AdaptiveColor{Light: "#1a7f37", Dark: "#3fb950"} // fgColor-success, -open
+	ghDanger    = lipgloss.AdaptiveColor{Light: "#d1242f", Dark: "#f85149"} // fgColor-danger, -closed
+	ghAttention = lipgloss.AdaptiveColor{Light: "#9a6700", Dark: "#d29922"} // fgColor-attention
+	ghNeutral   = lipgloss.AdaptiveColor{Light: "#59636e", Dark: "#9198a1"} // fgColor-neutral, -draft, -muted
+)
+
 // statusLabel is the word shown after a PR's title for its github Status.
 type statusLabel struct {
 	text  string
 	style lipgloss.Style
 }
 
+func label(text string, color lipgloss.TerminalColor) statusLabel {
+	return statusLabel{text, lipgloss.NewStyle().Foreground(color)}
+}
+
 // statusLabels covers the statuses an open PR can have. "open" means nothing
-// is flagged and no review is required, so it has no label.
+// is flagged and no review is required, so it has no label. Failures and
+// requested changes are red as on GitHub, approval green, and drafts grey.
+// Waiting on reviewers is grey too, as review state is in GitHub's PR list.
+// GitHub documents no colour for the merge queue; it gets attention yellow,
+// GitHub's colour for something under way, like running checks.
 var statusLabels = map[string]statusLabel{
-	"draft":             {"draft", lipgloss.NewStyle().Foreground(lipgloss.Color("245"))},
-	"queued":            {"queued", lipgloss.NewStyle().Foreground(lipgloss.Color("14"))},
-	"conflicting":       {"conflicts", lipgloss.NewStyle().Foreground(lipgloss.Color("9"))},
-	"ci_failing":        {"ci failing", lipgloss.NewStyle().Foreground(lipgloss.Color("9"))},
-	"changes_requested": {"changes requested", lipgloss.NewStyle().Foreground(lipgloss.Color("11"))},
-	"approved":          {"approved", lipgloss.NewStyle().Foreground(lipgloss.Color("10"))},
-	"review_required":   {"needs review", lipgloss.NewStyle().Foreground(lipgloss.Color("245"))},
+	"draft":             label("draft", ghNeutral),
+	"queued":            label("queued", ghAttention),
+	"conflicting":       label("conflicts", ghDanger),
+	"ci_failing":        label("ci failing", ghDanger),
+	"changes_requested": label("changes requested", ghDanger),
+	"approved":          label("approved", ghSuccess),
+	"review_required":   label("needs review", ghNeutral),
 }
 
 // prLead is the part of a row before the title: size, number and the spaces
