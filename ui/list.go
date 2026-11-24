@@ -21,6 +21,10 @@ import (
 
 const refreshInterval = 30 * time.Second
 
+// writeClipboard is clipboard.WriteAll, swapped out by tests so they never
+// touch the real clipboard.
+var writeClipboard = clipboard.WriteAll
+
 var (
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("255"))
@@ -171,9 +175,11 @@ const (
 )
 
 type model struct {
-	view    viewState
-	copied  bool
-	openErr error
+	view   viewState
+	copied bool
+	// actionErr is the last copy or open-in-browser failure, shown in the
+	// footer until the next key press.
+	actionErr error
 
 	// ordered is view.prs regrouped by tracked repo (in m.repos order), and
 	// rows is the rendered structure over it. cursor indexes ordered.
@@ -610,7 +616,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cursor, ok := moveCursor(key, m.cursor, len(m.ordered), m.pageSize()); ok {
 			m.cursor = cursor
 			m.copied = false
-			m.openErr = nil
+			m.actionErr = nil
 			return m, nil
 		}
 
@@ -621,7 +627,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "c":
 			m.mode = modeConfig
 			m.copied = false
-			m.openErr = nil
+			m.actionErr = nil
 			m.cfgErr = nil
 			m.cfgCursor = 0
 			return m, m.ensureSuggestions()
@@ -635,26 +641,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter", "y":
 			// Enter is the primary action; y is vim's "yank" for copy.
 			if selectedPR, ok := m.selectedPR(); ok {
-				formatted := selectedPR.FormatForSlack()
-				if err := clipboard.WriteAll(formatted); err == nil {
-					m.copied = true
-					return m, tea.Tick(time.Millisecond*1500, func(t time.Time) tea.Msg {
-						return resetCopiedMsg{}
-					})
+				if err := writeClipboard(selectedPR.FormatForSlack()); err != nil {
+					m.copied = false
+					m.actionErr = fmt.Errorf("could not copy: %w", err)
+					return m, nil
 				}
+				m.copied = true
+				m.actionErr = nil
+				return m, tea.Tick(time.Millisecond*1500, func(t time.Time) tea.Msg {
+					return resetCopiedMsg{}
+				})
 			}
 			return m, nil
 
 		case "o":
 			if pr, ok := m.selectedPR(); ok {
-				m.openErr = nil
+				m.actionErr = nil
 				return m, openInBrowser(pr.URL)
 			}
 			return m, nil
 
 		default:
 			m.copied = false
-			m.openErr = nil
+			m.actionErr = nil
 		}
 
 	case resetCopiedMsg:
@@ -662,7 +671,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case openedMsg:
-		m.openErr = msg.err
+		m.actionErr = nil
+		if msg.err != nil {
+			m.actionErr = fmt.Errorf("could not open browser: %w", msg.err)
+		}
 		return m, nil
 	}
 
@@ -790,9 +802,10 @@ func (m model) View() string {
 	}
 
 	// The footer always occupies the same number of lines so transient
-	// messages (copied, browser error) never push the timestamp or the key
-	// legend around. Persistent refresh errors are the one exception: they
-	// are multi-line and stay until the next successful fetch.
+	// messages (copied, or a failed copy or open) never push the timestamp
+	// or the key legend around. Persistent refresh errors are the one
+	// exception: they are multi-line and stay until the next successful
+	// fetch.
 	var footer strings.Builder
 	if v.err != nil && v.loaded {
 		footer.WriteString("\n" + errorStyle.Render(fmt.Sprintf("⚠ refresh failed:\n%v", indent(v.err.Error(), 2))))
@@ -801,8 +814,8 @@ func (m model) View() string {
 	switch {
 	case m.copied:
 		status = copiedStyle.Render("✓ copied to clipboard!")
-	case m.openErr != nil:
-		status = errorStyle.Render(fmt.Sprintf("⚠ could not open browser: %v", m.openErr))
+	case m.actionErr != nil:
+		status = errorStyle.Render(fmt.Sprintf("⚠ %v", m.actionErr))
 	}
 	footer.WriteString("\n" + status)
 	timestamp := ""

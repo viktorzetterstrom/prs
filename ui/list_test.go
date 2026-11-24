@@ -16,12 +16,32 @@ import (
 func newTestModel(t *testing.T, repos []string, currentRepo string) model {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	stubClipboard(t, nil)
 	return newModel(repos, currentRepo, false)
+}
+
+// stubClipboard replaces the clipboard for the rest of the test. Writes
+// fail with err when it is non-nil; the returned func reports the last
+// text written.
+func stubClipboard(t *testing.T, err error) func() string {
+	t.Helper()
+	var last string
+	orig := writeClipboard
+	writeClipboard = func(s string) error {
+		if err != nil {
+			return err
+		}
+		last = s
+		return nil
+	}
+	t.Cleanup(func() { writeClipboard = orig })
+	return func() string { return last }
 }
 
 func newFirstRunModel(t *testing.T, repos []string, currentRepo string) model {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	stubClipboard(t, nil)
 	return newModel(repos, currentRepo, true)
 }
 
@@ -716,5 +736,37 @@ func TestLongTitleIsTruncatedBeforeTheLabel(t *testing.T) {
 	}
 	if w := ansi.StringWidth(got); w > 59 {
 		t.Fatalf("row is %d cells wide, want at most 59: %q", w, got)
+	}
+}
+
+func TestCopyFailureIsShown(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "")
+	stubClipboard(t, errorf("no clipboard tool found"))
+	m, _ = send(m, refreshMsg{prs: []github.PR{{Number: 1, Title: "x", Repo: "a/one", URL: "u"}}})
+	m, _ = send(m, key("enter"))
+	if m.copied {
+		t.Fatal("a failed copy must not report success")
+	}
+	if v := m.View(); !strings.Contains(v, "could not copy: no clipboard tool found") {
+		t.Fatalf("copy error not shown:\n%s", v)
+	}
+	m, _ = send(m, key("down"))
+	if strings.Contains(m.View(), "could not copy") {
+		t.Fatal("copy error should clear on the next key press")
+	}
+}
+
+func TestCopyWritesSlackLineAndClearsError(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "")
+	written := stubClipboard(t, nil)
+	pr := github.PR{Number: 1, Title: "x", Repo: "a/one", URL: "u"}
+	m, _ = send(m, refreshMsg{prs: []github.PR{pr}})
+	m.actionErr = errorf("could not open browser: nope")
+	m, _ = send(m, key("y"))
+	if !m.copied || m.actionErr != nil {
+		t.Fatalf("copy should succeed and clear the old error: copied=%v err=%v", m.copied, m.actionErr)
+	}
+	if got := written(); got != pr.FormatForSlack() {
+		t.Fatalf("clipboard = %q, want %q", got, pr.FormatForSlack())
 	}
 }
