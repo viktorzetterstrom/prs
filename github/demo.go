@@ -76,3 +76,43 @@ func demoAll() []PR {
 	}
 
 }
+
+// demoClosedPRs returns canned merged and closed PRs for the history tab,
+// split across DemoRepos by PR number parity like demoPRs.
+func demoClosedPRs(repo string) []PR {
+	var out []PR
+	for i, pr := range demoClosedAll() {
+		if DemoRepos[pr.Number%len(DemoRepos)] != repo {
+			continue
+		}
+		pr.ClosedAt = time.Now().Add(-time.Duration(2+i*29) * time.Hour)
+		pr.UpdatedAt = pr.ClosedAt
+		out = append(out, pr)
+	}
+	return out
+}
+
+func demoClosedAll() []PR {
+	return []PR{
+		{
+			Number: 135, Title: "Merged this morning",
+			Additions: 40, Deletions: 8,
+			URL: "https://github.com/example/repo/pull/135", State: "MERGED",
+		},
+		{
+			Number: 134, Title: "Closed without merging",
+			Additions: 3, Deletions: 3,
+			URL: "https://github.com/example/repo/pull/134", State: "CLOSED",
+		},
+		{
+			Number: 133, Title: "Merged a couple of days ago",
+			Additions: 120, Deletions: 64,
+			URL: "https://github.com/example/repo/pull/133", State: "MERGED",
+		},
+		{
+			Number: 132, Title: "Small fix that went in last week",
+			Additions: 2, Deletions: 1,
+			URL: "https://github.com/example/repo/pull/132", State: "MERGED",
+		},
+	}
+}

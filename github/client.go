@@ -23,6 +23,8 @@ type PR struct {
 	Mergeable      string
 	ReviewDecision string
 	UpdatedAt      time.Time
+	// ClosedAt is when the PR was merged or closed; zero while it is open.
+	ClosedAt time.Time
 
 	// CheckState is GitHub's combined check result for the head commit:
 	// SUCCESS, FAILURE, ERROR, PENDING or EXPECTED, or "" when no checks
@@ -54,7 +56,7 @@ var DemoMode bool
 // can be previewed without a config file.
 var DemoRepos = []string{"example/platform", "example/config"}
 
-// prQuery fetches the caller's open PRs in one repo. It goes through the
+// prQuery fetches the caller's PRs in one repo that match a search filter. It goes through the
 // GraphQL API rather than `gh pr list` because only GraphQL has the merge
 // queue flag and GitHub's own combined check result. The repository field
 // is there so a repo that does not exist fails the query; search alone
@@ -65,7 +67,7 @@ const prQuery = `query($owner: String!, $name: String!, $q: String!) {
     nodes {
       ... on PullRequest {
         number title additions deletions url state isDraft mergeable
-        reviewDecision updatedAt isInMergeQueue
+        reviewDecision updatedAt closedAt isInMergeQueue
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       }
     }
@@ -84,6 +86,7 @@ type prNode struct {
 	Mergeable      string    `json:"mergeable"`
 	ReviewDecision string    `json:"reviewDecision"`
 	UpdatedAt      time.Time `json:"updatedAt"`
+	ClosedAt       time.Time `json:"closedAt"`
 	IsInMergeQueue bool      `json:"isInMergeQueue"`
 	Commits        struct {
 		Nodes []struct {
@@ -108,6 +111,7 @@ func (n prNode) pr() PR {
 		Mergeable:      n.Mergeable,
 		ReviewDecision: n.ReviewDecision,
 		UpdatedAt:      n.UpdatedAt,
+		ClosedAt:       n.ClosedAt,
 		InMergeQueue:   n.IsInMergeQueue,
 	}
 	if c := n.Commits.Nodes; len(c) > 0 && c[0].Commit.StatusCheckRollup != nil {
@@ -129,6 +133,37 @@ func (e RepoError) Error() string { return fmt.Sprintf("%s: %v", e.Repo, e.Err) 
 // them merged, most recently updated first, together with one error per repo
 // that failed.
 func GetPRs(repos []string) ([]PR, []RepoError) {
+	prs, errs := fetchEach(repos, func(repo string) ([]PR, error) {
+		if DemoMode {
+			return demoPRs(repo), nil
+		}
+		return searchPRs(repo, "is:open")
+	})
+	sort.SliceStable(prs, func(a, b int) bool {
+		return prs[a].UpdatedAt.After(prs[b].UpdatedAt)
+	})
+	return prs, errs
+}
+
+// GetClosedSince fetches the caller's PRs in every repo that were merged or
+// closed at or after since, most recently closed first, together with one
+// error per repo that failed.
+func GetClosedSince(repos []string, since time.Time) ([]PR, []RepoError) {
+	prs, errs := fetchEach(repos, func(repo string) ([]PR, error) {
+		if DemoMode {
+			return demoClosedPRs(repo), nil
+		}
+		return searchPRs(repo, "is:closed closed:>="+since.UTC().Format(time.RFC3339))
+	})
+	sort.SliceStable(prs, func(a, b int) bool {
+		return prs[a].ClosedAt.After(prs[b].ClosedAt)
+	})
+	return prs, errs
+}
+
+// fetchEach runs fetch for every repo concurrently, stamps each PR with its
+// repo, and returns the PRs in repo order with one error per repo that failed.
+func fetchEach(repos []string, fetch func(repo string) ([]PR, error)) ([]PR, []RepoError) {
 	type result struct {
 		prs []PR
 		err error
@@ -140,7 +175,7 @@ func GetPRs(repos []string) ([]PR, []RepoError) {
 		wg.Add(1)
 		go func(i int, repo string) {
 			defer wg.Done()
-			prs, err := getRepoPRs(repo)
+			prs, err := fetch(repo)
 			for j := range prs {
 				prs[j].Repo = repo
 			}
@@ -158,22 +193,17 @@ func GetPRs(repos []string) ([]PR, []RepoError) {
 		}
 		merged = append(merged, r.prs...)
 	}
-	sort.SliceStable(merged, func(a, b int) bool {
-		return merged[a].UpdatedAt.After(merged[b].UpdatedAt)
-	})
 	return merged, errs
 }
 
-func getRepoPRs(repo string) ([]PR, error) {
-	if DemoMode {
-		return demoPRs(repo), nil
-	}
-
+// searchPRs runs prQuery for the caller's PRs in repo that match filter, a
+// GitHub search qualifier such as "is:open".
+func searchPRs(repo, filter string) ([]PR, error) {
 	owner, name, _ := strings.Cut(repo, "/")
 	output, err := runGH("api", "graphql",
 		"-f", "owner="+owner,
 		"-f", "name="+name,
-		"-f", "q=repo:"+repo+" is:pr is:open author:@me",
+		"-f", "q=repo:"+repo+" is:pr author:@me "+filter,
 		"-f", "query="+prQuery)
 	if err != nil {
 		return nil, err

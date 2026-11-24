@@ -43,7 +43,9 @@ func (m *model) applyRepoChange() {
 	m.cfgDirty = true
 	m.gen++
 	m.saveConfig()
-	m.view.reset()
+	for i := range m.tabs {
+		m.tabs[i].reset()
+	}
 	if m.cfgCursor >= m.configRowCount() {
 		m.cfgCursor = max(0, m.configRowCount()-1)
 	}

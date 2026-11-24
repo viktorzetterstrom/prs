@@ -2,6 +2,7 @@ package github
 
 import (
 	"testing"
+	"time"
 )
 
 func TestValidRepo(t *testing.T) {
@@ -159,5 +160,22 @@ func TestParsePRsReadsQueueAndCheckState(t *testing.T) {
 	}
 	if d := prs[1]; d.CheckState != "" || d.ReviewDecision != "" || d.Status() != "draft" {
 		t.Errorf("draft PR: checks=%q review=%q status=%q", d.CheckState, d.ReviewDecision, d.Status())
+	}
+}
+
+func TestGetClosedSinceDemoIsNewestClosedFirst(t *testing.T) {
+	DemoMode = true
+	t.Cleanup(func() { DemoMode = false })
+	prs, errs := GetClosedSince(DemoRepos, time.Now().Add(-7*24*time.Hour))
+	if len(errs) != 0 || len(prs) != len(demoClosedAll()) {
+		t.Fatalf("expected all %d demo history PRs, got %d (errs %v)", len(demoClosedAll()), len(prs), errs)
+	}
+	for i, pr := range prs {
+		if s := pr.Status(); s != "merged" && s != "closed" {
+			t.Errorf("#%d has status %q", pr.Number, s)
+		}
+		if i > 0 && prs[i-1].ClosedAt.Before(pr.ClosedAt) {
+			t.Errorf("not sorted newest closed first at index %d", i)
+		}
 	}
 }

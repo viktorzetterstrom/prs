@@ -1,6 +1,6 @@
 # `prs`
 
-A terminal UI for your open GitHub pull requests.
+A terminal UI for your open GitHub pull requests, and the ones merged or closed in the last 7 days.
 
 ## Install
 
@@ -16,6 +16,7 @@ The binary lands in `$(go env GOPATH)/bin` (usually `~/go/bin`); make sure that 
 
 | Key     | PR list              | Config screen            |
 | ------- | -------------------- | ------------------------ |
+| ← / →   | Switch tab           |                          |
 | ↑ / ↓   | Move                 | Move                     |
 | Enter   | Copy for Slack       | Done                     |
 | Space   |                      | Track / untrack repo     |
@@ -25,7 +26,7 @@ The binary lands in `$(go env GOPATH)/bin` (usually `~/go/bin`); make sure that 
 | `c`     | Open config          | Back to list             |
 | `q`     | Quit                 | Quit                     |
 
-Vim keys (`j`/`k`, `g`/`G`, `y` to copy) work too.
+Tab and Shift+Tab switch tabs too, and vim keys work (`h`/`l`, `j`/`k`, `g`/`G`, `y` to copy).
 
 Config is stored in `~/.config/prs/config.json`.
 

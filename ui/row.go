@@ -17,6 +17,7 @@ var (
 	ghDanger    = lipgloss.AdaptiveColor{Light: "#d1242f", Dark: "#f85149"} // fgColor-danger, -closed
 	ghAttention = lipgloss.AdaptiveColor{Light: "#9a6700", Dark: "#d29922"} // fgColor-attention
 	ghNeutral   = lipgloss.AdaptiveColor{Light: "#59636e", Dark: "#9198a1"} // fgColor-neutral, -draft, -muted
+	ghDone      = lipgloss.AdaptiveColor{Light: "#8250df", Dark: "#ab7df8"} // fgColor-done (merged)
 )
 
 // statusLabel is the word shown after a PR's title for its github Status.
@@ -29,8 +30,9 @@ func label(text string, color lipgloss.TerminalColor) statusLabel {
 	return statusLabel{text, lipgloss.NewStyle().Foreground(color)}
 }
 
-// statusLabels covers the statuses an open PR can have. "open" means nothing
-// is flagged and no review is required, so it has no label. Failures and
+// statusLabels covers the statuses a PR in either tab can have. "open" means
+// nothing is flagged and no review is required, so it has no label. Merged
+// is purple and closed red, as on GitHub. Failures and
 // requested changes are red as on GitHub, approval green, and drafts grey.
 // Waiting on reviewers is grey too, as review state is in GitHub's PR list.
 // GitHub documents no colour for the merge queue; it gets attention yellow,
@@ -43,6 +45,8 @@ var statusLabels = map[string]statusLabel{
 	"changes_requested": label("changes requested", ghDanger),
 	"approved":          label("approved", ghSuccess),
 	"review_required":   label("needs review", ghNeutral),
+	"merged":            label("merged", ghDone),
+	"closed":            label("closed", ghDanger),
 }
 
 // prLead is the part of a row before the title: size, number and the spaces

@@ -209,8 +209,8 @@ func TestLeavingConfigAfterChangeRefetches(t *testing.T) {
 	t.Cleanup(func() { github.DemoMode = false })
 
 	m := newTestModel(t, []string{"example/platform"}, "")
-	m.view.loaded = true
-	m.view.prs = []github.PR{{Number: 1, Repo: "example/platform"}}
+	m.tabs[tabOpen].loaded = true
+	m.tabs[tabOpen].prs = []github.PR{{Number: 1, Repo: "example/platform"}}
 
 	m, _ = send(m, key("c"), key("a"))
 	m = typeString(m, "example/config")
@@ -219,7 +219,7 @@ func TestLeavingConfigAfterChangeRefetches(t *testing.T) {
 	if m.mode != modeList {
 		t.Fatalf("expected list mode after esc, got %v", m.mode)
 	}
-	if m.view.loaded {
+	if m.tabs[tabOpen].loaded {
 		t.Fatal("view should be invalidated after repo change")
 	}
 	if cmd == nil {
@@ -233,7 +233,7 @@ func TestLeavingConfigAfterChangeRefetches(t *testing.T) {
 		t.Fatalf("fetch gen %d != model gen %d", rm.gen, m.gen)
 	}
 	m, _ = send(m, rm)
-	if !m.view.loaded || len(m.view.prs) == 0 {
+	if !m.tabs[tabOpen].loaded || len(m.tabs[tabOpen].prs) == 0 {
 		t.Fatal("refresh result for current gen should populate the view")
 	}
 	if !strings.Contains(m.View(), "platform") || !strings.Contains(m.View(), "config") {

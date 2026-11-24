@@ -35,6 +35,7 @@ var (
 	hintStyle         = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("241"))
 	hintKeyStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 	titleStyle        = lipgloss.NewStyle().PaddingLeft(1).PaddingRight(1).Foreground(lipgloss.Color("255")).Background(lipgloss.Color("33")).Bold(true)
+	tabStyle          = lipgloss.NewStyle().PaddingLeft(1).PaddingRight(1).Foreground(lipgloss.Color("245"))
 	sectionStyle      = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("245")).Bold(true)
 	headerStyle       = lipgloss.NewStyle().PaddingLeft(2).PaddingBottom(1)
 	checkedStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
@@ -42,7 +43,7 @@ var (
 )
 
 // listRow is one line of the PR list: a repo heading, a PR, or an "empty
-// repo" note. Only PR rows are selectable; prIndex indexes model.ordered.
+// repo" note. Only PR rows are selectable; prIndex indexes tabView.ordered.
 type listRow struct {
 	heading string
 	prIndex int
@@ -54,6 +55,7 @@ type tickMsg time.Time
 
 type refreshMsg struct {
 	gen  int
+	tab  tab
 	prs  []github.PR
 	errs []github.RepoError
 }
@@ -74,6 +76,31 @@ func (v *viewState) reset() {
 	*v = viewState{}
 }
 
+// tab is one of the list's views. The open tab lists PRs still open; the
+// history tab lists those merged or closed within historyWindow.
+type tab int
+
+const (
+	tabOpen tab = iota
+	tabHistory
+	tabCount
+)
+
+const historyWindow = 7 * 24 * time.Hour
+
+var tabTitles = [tabCount]string{"open prs", "last 7 days"}
+
+// tabView is one tab's list: what was fetched for it, and ordered and rows,
+// which regroup those PRs by tracked repo (in m.repos order) and lay out the
+// lines over them. cursor indexes ordered. Each tab keeps its own, so
+// switching back returns to the same place.
+type tabView struct {
+	viewState
+	ordered []github.PR
+	rows    []listRow
+	cursor  int
+}
+
 type mode int
 
 const (
@@ -83,19 +110,15 @@ const (
 )
 
 type model struct {
-	view   viewState
+	tabs   [tabCount]tabView
+	tab    tab
 	copied bool
 	// actionErr is the last copy or open-in-browser failure, shown in the
 	// footer until the next key press.
 	actionErr error
 
-	// ordered is view.prs regrouped by tracked repo (in m.repos order), and
-	// rows is the rendered structure over it. cursor indexes ordered.
-	ordered []github.PR
-	rows    []listRow
-	cursor  int
-	width   int
-	height  int
+	width  int
+	height int
 
 	// repos is the effective list of tracked repositories. It starts from the
 	// config file, falling back to the current directory's repo when the
@@ -133,6 +156,9 @@ type model struct {
 
 func (m model) multiRepo() bool { return len(m.repos) > 1 }
 
+// cur is the tab on screen.
+func (m *model) cur() *tabView { return &m.tabs[m.tab] }
+
 func openInBrowser(url string) tea.Cmd {
 	return func() tea.Msg {
 		var cmd *exec.Cmd
@@ -148,24 +174,38 @@ func openInBrowser(url string) tea.Cmd {
 	}
 }
 
-func fetchPRs(repos []string, gen int) tea.Cmd {
+func fetchPRs(repos []string, gen int, t tab) tea.Cmd {
 	repos = slices.Clone(repos)
 	return func() tea.Msg {
-		prs, errs := github.GetPRs(repos)
-		return refreshMsg{gen: gen, prs: prs, errs: errs}
+		var prs []github.PR
+		var errs []github.RepoError
+		if t == tabHistory {
+			prs, errs = github.GetClosedSince(repos, time.Now().Add(-historyWindow))
+		} else {
+			prs, errs = github.GetPRs(repos)
+		}
+		return refreshMsg{gen: gen, tab: t, prs: prs, errs: errs}
 	}
 }
 
 // busy reports whether anything is in flight, which is when the spinner
 // animates. Spinner ticks are dropped once nothing is loading.
-func (m model) busy() bool { return m.view.loading || m.suggestLoading }
+func (m model) busy() bool {
+	for _, v := range m.tabs {
+		if v.loading {
+			return true
+		}
+	}
+	return m.suggestLoading
+}
 
+// startFetch loads the tab on screen.
 func (m *model) startFetch() tea.Cmd {
 	if len(m.repos) == 0 {
 		return nil
 	}
-	m.view.loading = true
-	return tea.Batch(fetchPRs(m.repos, m.gen), m.spinner.Tick)
+	m.cur().loading = true
+	return tea.Batch(fetchPRs(m.repos, m.gen, m.tab), m.spinner.Tick)
 }
 
 // Init only returns commands. The loading flags they correspond to are set
@@ -175,8 +215,8 @@ func (m model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) }),
 	}
-	if m.view.loading {
-		cmds = append(cmds, fetchPRs(m.repos, m.gen), m.spinner.Tick)
+	if m.cur().loading {
+		cmds = append(cmds, fetchPRs(m.repos, m.gen, m.tab), m.spinner.Tick)
 	}
 	if m.suggestLoading {
 		cmds = append(cmds, fetchSuggestions, m.spinner.Tick)
@@ -196,56 +236,78 @@ func formatTimeAgo(t time.Time) string {
 	}
 }
 
-// syncList regroups the fetched PRs by repo. With several repos tracked each
-// repo gets a heading (in tracked order) and repos with nothing open say so;
-// with one repo the list is flat. The cursor is clamped to the new length.
+// syncList regroups every tab's fetched PRs by repo.
 func (m *model) syncList() {
-	m.ordered = m.ordered[:0]
-	m.rows = m.rows[:0]
+	for i := range m.tabs {
+		m.tabs[i].sync(m.repos)
+	}
+}
 
-	if !m.multiRepo() {
-		for _, pr := range m.view.prs {
-			m.rows = append(m.rows, listRow{prIndex: len(m.ordered)})
-			m.ordered = append(m.ordered, pr)
+// sync regroups the fetched PRs by repo. With several repos tracked each
+// repo gets a heading (in tracked order) and repos with nothing to show say
+// so; with one repo the list is flat. The cursor is clamped to the new
+// length.
+func (v *tabView) sync(repos []string) {
+	v.ordered = v.ordered[:0]
+	v.rows = v.rows[:0]
+
+	if len(repos) <= 1 {
+		for _, pr := range v.prs {
+			v.rows = append(v.rows, listRow{prIndex: len(v.ordered)})
+			v.ordered = append(v.ordered, pr)
 		}
 	} else {
-		for i, repo := range m.repos {
+		for i, repo := range repos {
 			if i > 0 {
-				m.rows = append(m.rows, listRow{spacer: true})
+				v.rows = append(v.rows, listRow{spacer: true})
 			}
-			m.rows = append(m.rows, listRow{heading: github.PR{Repo: repo}.ShortRepo()})
+			v.rows = append(v.rows, listRow{heading: github.PR{Repo: repo}.ShortRepo()})
 			found := false
-			for _, pr := range m.view.prs {
+			for _, pr := range v.prs {
 				if pr.Repo != repo {
 					continue
 				}
 				found = true
-				m.rows = append(m.rows, listRow{prIndex: len(m.ordered)})
-				m.ordered = append(m.ordered, pr)
+				v.rows = append(v.rows, listRow{prIndex: len(v.ordered)})
+				v.ordered = append(v.ordered, pr)
 			}
 			if !found {
-				m.rows = append(m.rows, listRow{empty: true})
+				v.rows = append(v.rows, listRow{empty: true})
 			}
 		}
 	}
 
-	if m.cursor >= len(m.ordered) {
-		m.cursor = max(0, len(m.ordered)-1)
+	if v.cursor >= len(v.ordered) {
+		v.cursor = max(0, len(v.ordered)-1)
 	}
 }
 
 func (m model) selectedPR() (github.PR, bool) {
-	if m.cursor < 0 || m.cursor >= len(m.ordered) {
+	v := m.cur()
+	if v.cursor < 0 || v.cursor >= len(v.ordered) {
 		return github.PR{}, false
 	}
-	return m.ordered[m.cursor], true
+	return v.ordered[v.cursor], true
 }
 
+// ensureLoaded starts loading the tab on screen unless it has been loaded or
+// is loading already.
 func (m *model) ensureLoaded() tea.Cmd {
-	if m.view.loaded || m.view.loading {
+	if v := m.cur(); v.loaded || v.loading {
 		return nil
 	}
 	return m.startFetch()
+}
+
+// setTab switches to tab t, loading it the first time it is shown.
+func (m *model) setTab(t tab) tea.Cmd {
+	if t == m.tab {
+		return nil
+	}
+	m.tab = t
+	m.copied = false
+	m.actionErr = nil
+	return m.ensureLoaded()
 }
 
 // moveCursor applies the shared navigation keys (arrows, vim j/k, g/G,
@@ -300,7 +362,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		cmds := []tea.Cmd{tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })}
-		v := &m.view
+		// Only the tab on screen refreshes; the other catches up when shown.
+		v := m.cur()
 		if m.mode == modeList && v.loaded && !v.loading && time.Since(v.lastUpdated) >= refreshInterval {
 			cmds = append(cmds, m.startFetch())
 		}
@@ -311,7 +374,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Result for a repo set the user has since changed; drop it.
 			return m, nil
 		}
-		v := &m.view
+		v := &m.tabs[msg.tab]
 		v.loading = false
 		v.lastUpdated = time.Now()
 		allFailed := len(msg.errs) > 0 && len(msg.errs) == len(m.repos)
@@ -346,8 +409,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		key := msg.String()
-		if cursor, ok := moveCursor(key, m.cursor, len(m.ordered), m.pageSize()); ok {
-			m.cursor = cursor
+		if cursor, ok := moveCursor(key, m.cur().cursor, len(m.cur().ordered), m.pageSize()); ok {
+			m.cur().cursor = cursor
 			m.copied = false
 			m.actionErr = nil
 			return m, nil
@@ -356,6 +419,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch key {
 		case "q", "ctrl+c":
 			return m, tea.Quit
+
+		case "tab":
+			return m, m.setTab((m.tab + 1) % tabCount)
+		case "shift+tab":
+			return m, m.setTab((m.tab + tabCount - 1) % tabCount)
+		case "right", "l":
+			return m, m.setTab(min(m.tab+1, tabCount-1))
+		case "left", "h":
+			return m, m.setTab(max(m.tab-1, 0))
 
 		case "c":
 			m.mode = modeConfig
@@ -366,7 +438,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.ensureSuggestions()
 
 		case "r":
-			if !m.view.loading {
+			if !m.cur().loading {
 				return m, m.startFetch()
 			}
 			return m, nil
@@ -425,8 +497,31 @@ func hints(pairs ...string) string {
 	return hintStyle.Render(strings.Join(parts, " · "))
 }
 
+// renderHeader draws the tab titles, the one on screen highlighted.
 func (m model) renderHeader() string {
-	return headerStyle.Render(titleStyle.Render("open prs"))
+	titles := make([]string, tabCount)
+	for t := range tabCount {
+		if t == m.tab {
+			titles[t] = titleStyle.Render(tabTitles[t])
+		} else {
+			titles[t] = tabStyle.Render(tabTitles[t])
+		}
+	}
+	return headerStyle.Render(strings.Join(titles, " "))
+}
+
+// emptyText is what a tab says when there is nothing to list, for the
+// whole list (all) or under one repo's heading.
+func (m model) emptyText(all bool) string {
+	switch {
+	case m.tab == tabHistory && all:
+		return "nothing merged or closed in the last 7 days."
+	case m.tab == tabHistory:
+		return "nothing in the last 7 days"
+	case all:
+		return "no open pull requests."
+	}
+	return "no open pull requests"
 }
 
 func (m model) View() string {
@@ -434,7 +529,7 @@ func (m model) View() string {
 		return m.viewConfig()
 	}
 
-	v := m.view
+	v := m.cur()
 
 	var body string
 	switch {
@@ -445,7 +540,7 @@ func (m model) View() string {
 	case v.err != nil && !v.loaded:
 		body = errorStyle.Render(fmt.Sprintf("⚠ could not load prs:\n%v", indent(v.err.Error(), 2)))
 	case len(v.prs) == 0:
-		body = itemStyle.Render("no open pull requests.")
+		body = itemStyle.Render(m.emptyText(true))
 	default:
 		body = m.renderRows()
 	}
@@ -475,7 +570,7 @@ func (m model) View() string {
 		timestamp = timestampStyle.Render(formatTimeAgo(v.lastUpdated))
 	}
 	footer.WriteString("\n" + timestamp)
-	footer.WriteString("\n\n" + hints("↑/↓", "move", "enter", "copy", "o", "open", "r", "refresh", "c", "config"))
+	footer.WriteString("\n\n" + hints("←/→", "switch", "↑/↓", "move", "enter", "copy", "o", "open", "r", "refresh", "c", "config"))
 
 	return m.renderHeader() + "\n" + body + "\n" + footer.String()
 }
@@ -516,23 +611,24 @@ func (m model) renderLoading() string {
 func (m model) renderRows() string {
 	// The layout spans every PR, not just the visible window, so the label
 	// column does not shift while scrolling.
-	layout := newRowLayout(m.ordered, m.width)
-	lines := make([]string, len(m.rows))
+	v := m.cur()
+	layout := newRowLayout(v.ordered, m.width)
+	lines := make([]string, len(v.rows))
 	selectedLine := 0
-	for i, row := range m.rows {
+	for i, row := range v.rows {
 		switch {
 		case row.spacer:
 			lines[i] = ""
 		case row.heading != "":
 			lines[i] = sectionStyle.Render(row.heading)
 		case row.empty:
-			lines[i] = emptyStyle.Render("no open pull requests")
+			lines[i] = emptyStyle.Render(m.emptyText(false))
 		default:
-			selected := row.prIndex == m.cursor
+			selected := row.prIndex == v.cursor
 			if selected {
 				selectedLine = i
 			}
-			lines[i] = renderPR(m.ordered[row.prIndex], selected, layout)
+			lines[i] = renderPR(v.ordered[row.prIndex], selected, layout)
 		}
 	}
 
@@ -543,11 +639,11 @@ func (m model) renderRows() string {
 		start = min(max(0, selectedLine-window/2), len(lines)-window)
 		// Do not open on an orphaned heading's content: if the window starts
 		// right after a heading, pull the heading in.
-		if start > 0 && m.rows[start-1].heading != "" {
+		if start > 0 && v.rows[start-1].heading != "" {
 			start--
 		}
 		// And never open on the spacer above a heading.
-		if start < len(m.rows) && m.rows[start].spacer {
+		if start < len(v.rows) && v.rows[start].spacer {
 			start++
 		}
 	}
@@ -600,7 +696,7 @@ func newModel(repos []string, currentRepo string, firstRun bool) model {
 		m.mode = modeConfig
 		m.suggestLoading = true
 	} else if len(m.repos) > 0 {
-		m.view.loading = true
+		m.cur().loading = true
 	}
 	return m
 }

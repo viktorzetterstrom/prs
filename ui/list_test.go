@@ -54,6 +54,14 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyDown}
 	case "up":
 		return tea.KeyMsg{Type: tea.KeyUp}
+	case "left":
+		return tea.KeyMsg{Type: tea.KeyLeft}
+	case "right":
+		return tea.KeyMsg{Type: tea.KeyRight}
+	case "tab":
+		return tea.KeyMsg{Type: tea.KeyTab}
+	case "shift+tab":
+		return tea.KeyMsg{Type: tea.KeyShiftTab}
 	case "pgdown":
 		return tea.KeyMsg{Type: tea.KeyPgDown}
 	case "home":
@@ -113,13 +121,13 @@ func TestNoReposShowsHint(t *testing.T) {
 func TestListShowsKeyHints(t *testing.T) {
 	m := newTestModel(t, []string{"a/one"}, "")
 	v := m.View()
-	for _, want := range []string{"copy", "open", "refresh", "config"} {
+	for _, want := range []string{"switch", "copy", "open", "refresh", "config"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("hint %q missing from list view:\n%s", want, v)
 		}
 	}
-	if !strings.Contains(v, "open prs") {
-		t.Errorf("header should show the title:\n%s", v)
+	if !strings.Contains(v, "open prs") || !strings.Contains(v, "last 7 days") {
+		t.Errorf("header should show both tabs:\n%s", v)
 	}
 	if strings.Contains(v, "a/one") {
 		t.Errorf("header should not list repo names:\n%s", v)
@@ -130,7 +138,7 @@ func TestStaleRefreshIsDropped(t *testing.T) {
 	m := newTestModel(t, []string{"a/one"}, "")
 	m.gen = 2
 	m, _ = send(m, refreshMsg{gen: 1, prs: []github.PR{{Number: 1}}})
-	if m.view.loaded || len(m.view.prs) != 0 {
+	if m.tabs[tabOpen].loaded || len(m.tabs[tabOpen].prs) != 0 {
 		t.Fatal("stale refresh should be ignored")
 	}
 }
@@ -141,8 +149,8 @@ func TestPartialFailureKeepsResultsAndShowsError(t *testing.T) {
 		prs:  []github.PR{{Number: 7, Title: "ok", Repo: "a/one", UpdatedAt: time.Now()}},
 		errs: []github.RepoError{{Repo: "a/two", Err: errorf("boom")}},
 	})
-	if !m.view.loaded || len(m.view.prs) != 1 {
-		t.Fatalf("partial failure should still load successful repos: loaded=%v prs=%d", m.view.loaded, len(m.view.prs))
+	if !m.tabs[tabOpen].loaded || len(m.tabs[tabOpen].prs) != 1 {
+		t.Fatalf("partial failure should still load successful repos: loaded=%v prs=%d", m.tabs[tabOpen].loaded, len(m.tabs[tabOpen].prs))
 	}
 	out := m.View()
 	if !strings.Contains(out, "a/two: boom") {
@@ -156,7 +164,7 @@ func TestPartialFailureKeepsResultsAndShowsError(t *testing.T) {
 func TestAllReposFailingShowsErrorBody(t *testing.T) {
 	m := newTestModel(t, []string{"a/one"}, "")
 	m, _ = send(m, refreshMsg{errs: []github.RepoError{{Repo: "a/one", Err: errorf("nope")}}})
-	if m.view.loaded {
+	if m.tabs[tabOpen].loaded {
 		t.Fatal("view should not be marked loaded when every repo failed")
 	}
 	if !strings.Contains(m.View(), "could not load prs") {
@@ -314,7 +322,7 @@ func TestCopiedMessageDoesNotShiftLayout(t *testing.T) {
 func TestLoadingSkeletonShowsRepoHeadings(t *testing.T) {
 	m := newTestModel(t, []string{"a/platform", "a/config"}, "")
 	cmd := m.startFetch()
-	if cmd == nil || !m.view.loading {
+	if cmd == nil || !m.tabs[tabOpen].loading {
 		t.Fatal("startFetch should mark the view loading")
 	}
 	v := m.View()
@@ -357,7 +365,7 @@ func TestFirstFrameShowsLoadingSkeleton(t *testing.T) {
 	m := newTestModel(t, []string{"a/platform", "a/config"}, "")
 	v := m.View()
 	frame := strings.TrimRight(m.spinner.View(), " ")
-	if !m.view.loading || strings.Count(v, frame) != 2 {
+	if !m.tabs[tabOpen].loading || strings.Count(v, frame) != 2 {
 		t.Fatalf("first frame should show a spinner under each heading before Init's fetch lands:\n%s", v)
 	}
 	if strings.Contains(v, "no open pull requests") {
@@ -368,7 +376,7 @@ func TestFirstFrameShowsLoadingSkeleton(t *testing.T) {
 		t.Fatal("Init should start the fetch")
 	}
 	m, _ = send(m, rm)
-	if m.view.loading {
+	if m.tabs[tabOpen].loading {
 		t.Fatal("fetch result should clear loading")
 	}
 }
@@ -402,5 +410,83 @@ func TestCopyWritesSlackLineAndClearsError(t *testing.T) {
 	}
 	if got := written(); got != pr.FormatForSlack() {
 		t.Fatalf("clipboard = %q, want %q", got, pr.FormatForSlack())
+	}
+}
+
+func TestHistoryTabLoadsOnFirstVisitAndKeepsOpenList(t *testing.T) {
+	github.DemoMode = true
+	t.Cleanup(func() { github.DemoMode = false })
+	m := newTestModel(t, github.DemoRepos, "")
+	open := github.PR{Number: 1, Title: "still open", Repo: github.DemoRepos[0], State: "OPEN"}
+	m, _ = send(m, refreshMsg{tab: tabOpen, prs: []github.PR{open}})
+
+	m, cmd := send(m, key("tab"))
+	if m.tab != tabHistory {
+		t.Fatal("tab should switch to the history tab")
+	}
+	msg, ok := runForRefresh(cmd)
+	if !ok || msg.tab != tabHistory || len(msg.prs) == 0 {
+		t.Fatalf("the first visit should load history: ok=%v msg=%+v", ok, msg)
+	}
+	for _, pr := range msg.prs {
+		if s := pr.Status(); s != "merged" && s != "closed" {
+			t.Errorf("history has #%d with status %q", pr.Number, s)
+		}
+	}
+	m, _ = send(m, msg)
+
+	v := m.View()
+	if !strings.Contains(v, "merged") || !strings.Contains(v, "closed") || strings.Contains(v, "still open") {
+		t.Fatalf("history tab should list merged and closed PRs only:\n%s", v)
+	}
+	if got := m.tabs[tabOpen].prs; len(got) != 1 || got[0].Number != 1 {
+		t.Fatalf("loading history must not touch the open tab: %+v", got)
+	}
+
+	m, _ = send(m, key("left"))
+	if m.tab != tabOpen || !strings.Contains(m.View(), "still open") {
+		t.Fatalf("left should go back to the open tab:\n%s", m.View())
+	}
+	m, _ = send(m, key("left"))
+	if m.tab != tabOpen {
+		t.Fatal("left on the first tab should stay there")
+	}
+	m, cmd = send(m, key("right"))
+	if m.tab != tabHistory || cmd != nil {
+		t.Fatalf("right should show history again without refetching: tab=%v cmd=%v", m.tab, cmd != nil)
+	}
+	m, _ = send(m, key("right"))
+	if m.tab != tabHistory {
+		t.Fatal("right on the last tab should stay there")
+	}
+	m, _ = send(m, key("shift+tab"))
+	if m.tab != tabOpen {
+		t.Fatal("shift+tab should go to the previous tab")
+	}
+}
+
+func TestEachTabKeepsItsCursor(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "")
+	prs := []github.PR{{Number: 1, Repo: "a/one"}, {Number: 2, Repo: "a/one"}, {Number: 3, Repo: "a/one"}}
+	m, _ = send(m, refreshMsg{tab: tabOpen, prs: prs}, key("down"), key("down"))
+	m, _ = send(m, key("tab"), refreshMsg{tab: tabHistory, prs: prs[:2]})
+	if m.cur().cursor != 0 {
+		t.Fatalf("history cursor should start at the top, got %d", m.cur().cursor)
+	}
+	m, _ = send(m, key("tab"))
+	if pr, _ := m.selectedPR(); pr.Number != 3 {
+		t.Fatalf("back on the open tab the selection should still be #3, got #%d", pr.Number)
+	}
+}
+
+func TestEmptyHistorySaysSo(t *testing.T) {
+	m := newTestModel(t, []string{"a/one", "a/two"}, "")
+	m, _ = send(m, key("tab"), refreshMsg{tab: tabHistory, prs: []github.PR{{Number: 5, Repo: "a/one", State: "MERGED"}}})
+	if v := m.View(); !strings.Contains(v, "nothing in the last 7 days") {
+		t.Fatalf("a repo with no history should say so:\n%s", v)
+	}
+	m, _ = send(m, refreshMsg{tab: tabHistory})
+	if v := m.View(); !strings.Contains(v, "nothing merged or closed in the last 7 days.") {
+		t.Fatalf("an empty history should say so:\n%s", v)
 	}
 }
