@@ -520,7 +520,7 @@ func TestStackLayersAreGatheredUnderAHeader(t *testing.T) {
 	v := ansi.Strip(m.View())
 	want := []string{
 		"[#9] Newest, alone",
-		"┌─── (+30/-3) Stack of 3",
+		"┌ (+30/-3) Stack of 3",
 		"│ 1. (+10/-1) [#5] Bottom layer",
 		"└ 2. (+20/-2) [#6] Middle layer",
 		"[#8] Older, alone",

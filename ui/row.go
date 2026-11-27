@@ -180,7 +180,7 @@ func newRowLayout(prs []github.PR, width int) rowLayout {
 		}
 		stats, text := stackHeading(e.stack)
 		l, ok := stackLabel(e.stack)
-		fit(ansi.StringWidth(github.StackCorner(e.stack))+1+ansi.StringWidth(stats)+1+ansi.StringWidth(text), l, ok)
+		fit(treeWidth+ansi.StringWidth(stats)+1+ansi.StringWidth(text), l, ok)
 		for _, pr := range e.stack {
 			_, lead := prLead(pr)
 			l, ok := statusLabels[pr.Status()]
@@ -242,14 +242,13 @@ func renderPR(pr github.PR, tree string, selected bool, layout rowLayout) string
 }
 
 // renderStackHeader draws the row above a stack's layers: their combined
-// size, right above the layers' own, how many PRs the stack has, and the
-// stack's label in the shared column.
+// size, how many PRs the stack has, and the stack's label in the shared
+// column.
 func renderStackHeader(layers []github.PR, selected bool, layout rowLayout) string {
 	stats, text := stackHeading(layers)
-	corner := github.StackCorner(layers)
-	lead := ansi.StringWidth(corner) + 1 + ansi.StringWidth(stats) + 1
+	lead := treeWidth + ansi.StringWidth(stats) + 1
 	text = fitTitle(text, layout.labelCol-labelGap-lead, layout)
-	str := treeStyle.Render(corner) + " " + statsStyle.Render(stats) + " " + text
+	str := treeStyle.Render("┌") + " " + statsStyle.Render(stats) + " " + text
 	if l, ok := stackLabel(layers); ok {
 		str += labelAfter(lead+ansi.StringWidth(text), l, layout)
 	}
