@@ -1,3 +1,5 @@
+<img src="assets/icon.svg" alt="" width="96" height="96">
+
 # `prs`
 
 A terminal UI for your open GitHub pull requests, and the ones merged or closed in the last 7 days.
