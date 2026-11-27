@@ -396,8 +396,16 @@ func StackTitle(layers []PR) string {
 	return fmt.Sprintf("Stack of %d", layers[0].Stack.Size)
 }
 
+// StackCorner starts the line heading a stack's layers: a corner whose line
+// runs on past where the layers have their StackTree glyph and StackTag,
+// so the header's size starts right above the layers' sizes.
+func StackCorner(layers []PR) string {
+	return "┌" + strings.Repeat("─", len(layers[0].StackTag())+1)
+}
+
 // StackTree is the glyph that joins layer i of n to the line heading their
-// stack, which has "┌": "│" beside each layer, and "└" beside the last.
+// stack, which has StackCorner: "│" beside each layer, and "└" beside the
+// last.
 func StackTree(i, n int) string {
 	if i == n-1 {
 		return "└"
@@ -406,13 +414,14 @@ func StackTree(i, n int) string {
 }
 
 // FormatStackForSlack renders layers of one stack, bottom first, the way the
-// list shows them: a heading line with the layers' combined size and
-// StackTitle, then each layer's own Slack line, joined by StackTree glyphs.
+// list shows them: a heading line with StackCorner, the layers' combined
+// size and StackTitle, then each layer's own Slack line, joined by
+// StackTree glyphs.
 // Each glyph starts its line, so they stay in one column in Slack's
 // proportional font.
 func FormatStackForSlack(layers []PR) string {
 	add, del := StackSize(layers)
-	lines := []string{fmt.Sprintf("┌ `(+%d/-%d)` %s", add, del, StackTitle(layers))}
+	lines := []string{fmt.Sprintf("%s `(+%d/-%d)` %s", StackCorner(layers), add, del, StackTitle(layers))}
 	for i, pr := range layers {
 		lines = append(lines, StackTree(i, len(layers))+" "+pr.FormatForSlack())
 	}
