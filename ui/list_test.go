@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/viktorzetterstrom/prs/github"
 )
 
@@ -488,5 +490,92 @@ func TestEmptyHistorySaysSo(t *testing.T) {
 	m, _ = send(m, refreshMsg{tab: tabHistory})
 	if v := m.View(); !strings.Contains(v, "nothing merged or closed in the last 7 days.") {
 		t.Fatalf("an empty history should say so:\n%s", v)
+	}
+}
+
+// stackLayer is an open PR that is layer pos of a three-layer stack into main.
+func stackLayer(number, pos int, title string) github.PR {
+	return github.PR{
+		Number: number, Title: title, Repo: "a/one", State: "OPEN", URL: fmt.Sprintf("u%d", number),
+		Additions: 10 * pos, Deletions: pos,
+		Stack: &github.Stack{Number: 7, Size: 3, Position: pos, Base: "main"},
+	}
+}
+
+func TestStackLayersAreGatheredUnderAHeader(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "")
+	written := stubClipboard(t, nil)
+	middle := stackLayer(6, 2, "Middle layer")
+	middle.ReviewDecision = "REVIEW_REQUIRED"
+	bottom := stackLayer(5, 1, "Bottom layer")
+	bottom.ReviewDecision = "APPROVED"
+	m, _ = send(m, refreshMsg{prs: []github.PR{
+		{Number: 9, Title: "Newest, alone", Repo: "a/one", State: "OPEN"},
+		middle,
+		{Number: 8, Title: "Older, alone", Repo: "a/one", State: "OPEN"},
+		bottom,
+	}})
+
+	// The stack sits where its most recent layer did, bottom layer first.
+	v := ansi.Strip(m.View())
+	want := []string{
+		"[#9] Newest, alone",
+		"┌ (+30/-3) Stack of 3 into main",
+		"│ (+10/-1) [#5] 1/3 Bottom layer",
+		"└ (+20/-2) [#6] 2/3 Middle layer",
+		"[#8] Older, alone",
+	}
+	at := -1
+	for _, w := range want {
+		i := strings.Index(v, w)
+		if i <= at {
+			t.Fatalf("expected %q after the rows before it:\n%s", w, v)
+		}
+		at = i
+	}
+	// The header names the lowest layer holding the stack back.
+	if !strings.Contains(v, "Stack of 3 into main") || !strings.Contains(v, "#6 needs review") {
+		t.Fatalf("header should carry the blocking layer's label:\n%s", v)
+	}
+
+	// The header is a row of its own: Enter there copies the whole stack.
+	m, _ = send(m, key("down"))
+	if _, ok := m.selectedPR(); ok {
+		t.Fatal("the stack header is not a PR")
+	}
+	m, _ = send(m, key("enter"))
+	if got, want := written(), github.FormatStackForSlack([]github.PR{bottom, middle}); got != want {
+		t.Fatalf("enter on the header copied %q, want %q", got, want)
+	}
+
+	// On a layer, Enter copies that layer's line, position included.
+	m, _ = send(m, key("down"), key("enter"))
+	if got := written(); got != "`(+10/-1)` [#5](u5) `1/3` Bottom layer" {
+		t.Fatalf("enter on the bottom layer copied %q", got)
+	}
+	m, _ = send(m, key("down"), key("down"))
+	if pr, _ := m.selectedPR(); pr.Number != 8 {
+		t.Fatalf("after the stack the cursor should reach #8, got #%d", pr.Number)
+	}
+}
+
+func TestStackHeaderLabelWhenNothingBlocks(t *testing.T) {
+	bottom, top := stackLayer(5, 1, "Bottom"), stackLayer(6, 2, "Top")
+	bottom.ReviewDecision, top.ReviewDecision = "APPROVED", "APPROVED"
+	top.InMergeQueue = true
+	l, ok := stackLabel([]github.PR{bottom, top})
+	if !ok || l.text != "queued" {
+		t.Fatalf("with nothing blocking, the header should show the top layer's label, got %q", l.text)
+	}
+}
+
+func TestStacklessPRsAreNotRegrouped(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "")
+	m, _ = send(m, refreshMsg{prs: []github.PR{{Number: 2, Repo: "a/one"}, {Number: 1, Repo: "a/one"}}})
+	if v := m.View(); strings.ContainsAny(v, "┌│└") {
+		t.Fatalf("without stacks there should be no tree:\n%s", v)
+	}
+	if len(m.cur().selectable) != 2 {
+		t.Fatalf("each PR should be one selectable row, got %d", len(m.cur().selectable))
 	}
 }

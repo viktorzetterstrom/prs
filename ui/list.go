@@ -43,13 +43,19 @@ var (
 	uncheckedStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 )
 
-// listRow is one line of the PR list: a repo heading, a PR, or an "empty
-// repo" note. Only PR rows are selectable; prIndex indexes tabView.ordered.
+// listRow is one line of the PR list: a repo heading, a PR, the header of a
+// stack, or an "empty repo" note. PR rows and stack headers are selectable;
+// prIndex indexes tabView.ordered.
 type listRow struct {
 	heading string
 	prIndex int
-	empty   bool
-	spacer  bool
+	// stack holds a stack's layers, bottom first, on the row that heads them.
+	stack []github.PR
+	// tree is the glyph that joins a layer to its stack's header: │, or └
+	// beside the last layer.
+	tree   string
+	empty  bool
+	spacer bool
 }
 
 type tickMsg time.Time
@@ -93,13 +99,15 @@ var tabTitles = [tabCount]string{"open prs", "last 7 days"}
 
 // tabView is one tab's list: what was fetched for it, and ordered and rows,
 // which regroup those PRs by tracked repo (in m.repos order) and lay out the
-// lines over them. cursor indexes ordered. Each tab keeps its own, so
-// switching back returns to the same place.
+// lines over them. selectable lists the rows the cursor can land on, as
+// indices into rows, and cursor indexes selectable. Each tab keeps its own,
+// so switching back returns to the same place.
 type tabView struct {
 	viewState
-	ordered []github.PR
-	rows    []listRow
-	cursor  int
+	ordered    []github.PR
+	rows       []listRow
+	selectable []int
+	cursor     int
 }
 
 type mode int
@@ -255,49 +263,111 @@ func (m *model) syncList() {
 
 // sync regroups the fetched PRs by repo. With several repos tracked each
 // repo gets a heading (in tracked order) and repos with nothing to show say
-// so; with one repo the list is flat. The cursor is clamped to the new
-// length.
+// so; with one repo the list is flat. Within either, a stack's layers are
+// gathered under a header row (see groupStacks). The cursor is clamped to
+// the new length.
 func (v *tabView) sync(repos []string) {
 	v.ordered = v.ordered[:0]
 	v.rows = v.rows[:0]
+	v.selectable = v.selectable[:0]
 
 	if len(repos) <= 1 {
-		for _, pr := range v.prs {
-			v.rows = append(v.rows, listRow{prIndex: len(v.ordered)})
-			v.ordered = append(v.ordered, pr)
-		}
+		v.addPRs(v.prs)
 	} else {
 		for i, repo := range repos {
 			if i > 0 {
 				v.rows = append(v.rows, listRow{spacer: true})
 			}
 			v.rows = append(v.rows, listRow{heading: github.PR{Repo: repo}.ShortRepo()})
-			found := false
+			var inRepo []github.PR
 			for _, pr := range v.prs {
-				if pr.Repo != repo {
-					continue
+				if pr.Repo == repo {
+					inRepo = append(inRepo, pr)
 				}
-				found = true
-				v.rows = append(v.rows, listRow{prIndex: len(v.ordered)})
-				v.ordered = append(v.ordered, pr)
 			}
-			if !found {
+			if len(inRepo) == 0 {
 				v.rows = append(v.rows, listRow{empty: true})
 			}
+			v.addPRs(inRepo)
 		}
 	}
 
-	if v.cursor >= len(v.ordered) {
-		v.cursor = max(0, len(v.ordered)-1)
+	if v.cursor >= len(v.selectable) {
+		v.cursor = max(0, len(v.selectable)-1)
 	}
 }
 
-func (m model) selectedPR() (github.PR, bool) {
+// addPRs appends a row for each PR, with each stack's layers under a header
+// row of its own.
+func (v *tabView) addPRs(prs []github.PR) {
+	for _, e := range groupStacks(prs) {
+		if e.stack == nil {
+			v.addPR(e.pr, "")
+			continue
+		}
+		v.addSelectable(listRow{stack: e.stack})
+		for i, pr := range e.stack {
+			tree := "│"
+			if i == len(e.stack)-1 {
+				tree = "└"
+			}
+			v.addPR(pr, tree)
+		}
+	}
+}
+
+func (v *tabView) addPR(pr github.PR, tree string) {
+	v.addSelectable(listRow{prIndex: len(v.ordered), tree: tree})
+	v.ordered = append(v.ordered, pr)
+}
+
+func (v *tabView) addSelectable(row listRow) {
+	v.selectable = append(v.selectable, len(v.rows))
+	v.rows = append(v.rows, row)
+}
+
+// selectedRow is the row under the cursor: a PR or a stack's header.
+func (m model) selectedRow() (listRow, bool) {
 	v := m.cur()
-	if v.cursor < 0 || v.cursor >= len(v.ordered) {
+	if v.cursor < 0 || v.cursor >= len(v.selectable) {
+		return listRow{}, false
+	}
+	return v.rows[v.selectable[v.cursor]], true
+}
+
+// selectedPR is the PR under the cursor. On a stack's header there is none.
+func (m model) selectedPR() (github.PR, bool) {
+	row, ok := m.selectedRow()
+	if !ok || row.stack != nil {
 		return github.PR{}, false
 	}
-	return v.ordered[v.cursor], true
+	return m.cur().ordered[row.prIndex], true
+}
+
+// selectedSlack is what Enter copies: the selected PR's Slack line, or on a
+// stack's header the whole stack, the header's line and then each layer's.
+func (m model) selectedSlack() (string, bool) {
+	row, ok := m.selectedRow()
+	switch {
+	case !ok:
+		return "", false
+	case row.stack != nil:
+		return github.FormatStackForSlack(row.stack), true
+	}
+	return m.cur().ordered[row.prIndex].FormatForSlack(), true
+}
+
+// selectedURL is what o opens: the selected PR, or on a stack's header its
+// bottom layer, where review starts. Every layer's page maps the stack.
+func (m model) selectedURL() (string, bool) {
+	row, ok := m.selectedRow()
+	switch {
+	case !ok:
+		return "", false
+	case row.stack != nil:
+		return row.stack[0].URL, true
+	}
+	return m.cur().ordered[row.prIndex].URL, true
 }
 
 // ensureLoaded starts loading the tab on screen unless it has been loaded or
@@ -426,7 +496,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		key := msg.String()
-		if cursor, ok := moveCursor(key, m.cur().cursor, len(m.cur().ordered), m.pageSize()); ok {
+		if cursor, ok := moveCursor(key, m.cur().cursor, len(m.cur().selectable), m.pageSize()); ok {
 			m.cur().cursor = cursor
 			m.copied = false
 			m.actionErr = nil
@@ -462,8 +532,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter", "y":
 			// Enter is the primary action; y is vim's "yank" for copy.
-			if selectedPR, ok := m.selectedPR(); ok {
-				if err := writeClipboard(selectedPR.FormatForSlack()); err != nil {
+			if text, ok := m.selectedSlack(); ok {
+				if err := writeClipboard(text); err != nil {
 					m.copied = false
 					m.actionErr = fmt.Errorf("could not copy: %w", err)
 					return m, nil
@@ -477,9 +547,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "o":
-			if pr, ok := m.selectedPR(); ok {
+			if url, ok := m.selectedURL(); ok {
 				m.actionErr = nil
-				return m, openInBrowser(pr.URL)
+				return m, openInBrowser(url)
 			}
 			return m, nil
 
@@ -624,7 +694,7 @@ func (m model) renderLoading() string {
 	return b.String()
 }
 
-// renderRows draws the grouped list, scrolled so the selected PR is visible.
+// renderRows draws the grouped list, scrolled so the selected row is visible.
 func (m model) renderRows() string {
 	// The layout spans every PR, not just the visible window, so the label
 	// column does not shift while scrolling.
@@ -632,7 +702,11 @@ func (m model) renderRows() string {
 	layout := newRowLayout(v.ordered, m.width)
 	lines := make([]string, len(v.rows))
 	selectedLine := 0
+	if v.cursor < len(v.selectable) {
+		selectedLine = v.selectable[v.cursor]
+	}
 	for i, row := range v.rows {
+		selected := i == selectedLine && len(v.selectable) > 0
 		switch {
 		case row.spacer:
 			lines[i] = ""
@@ -640,12 +714,10 @@ func (m model) renderRows() string {
 			lines[i] = sectionStyle.Render(row.heading)
 		case row.empty:
 			lines[i] = emptyStyle.Render(m.emptyText(false))
+		case row.stack != nil:
+			lines[i] = renderStackHeader(row.stack, selected, layout)
 		default:
-			selected := row.prIndex == v.cursor
-			if selected {
-				selectedLine = i
-			}
-			lines[i] = renderPR(v.ordered[row.prIndex], selected, layout)
+			lines[i] = renderPR(v.ordered[row.prIndex], row.tree, selected, layout)
 		}
 	}
 
@@ -655,8 +727,8 @@ func (m model) renderRows() string {
 		// Keep the selection roughly centred once the list scrolls.
 		start = min(max(0, selectedLine-window/2), len(lines)-window)
 		// Do not open on an orphaned heading's content: if the window starts
-		// right after a heading, pull the heading in.
-		if start > 0 && v.rows[start-1].heading != "" {
+		// right after a repo heading or a stack's header, pull it in.
+		if start > 0 && (v.rows[start-1].heading != "" || v.rows[start-1].stack != nil) {
 			start--
 		}
 		// And never open on the spacer above a heading.

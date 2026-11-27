@@ -381,6 +381,29 @@ func (pr PR) FormatForSlack() string {
 		pr.Title)
 }
 
+// StackSize adds up the additions and deletions of layers.
+func StackSize(layers []PR) (additions, deletions int) {
+	for _, pr := range layers {
+		additions += pr.Additions
+		deletions += pr.Deletions
+	}
+	return additions, deletions
+}
+
+// FormatStackForSlack renders layers of one stack, bottom first, as a
+// heading line followed by each layer's own Slack line. The heading has the
+// layers' combined size, how many PRs the stack has and the branch it merges
+// into. The list's stack header shows the same.
+func FormatStackForSlack(layers []PR) string {
+	add, del := StackSize(layers)
+	s := layers[0].Stack
+	lines := []string{fmt.Sprintf("`(+%d/-%d)` Stack of %d into `%s`", add, del, s.Size, s.Base)}
+	for _, pr := range layers {
+		lines = append(lines, pr.FormatForSlack())
+	}
+	return strings.Join(lines, "\n")
+}
+
 // StackTag is the PR's place in its stack, such as "2/3" for the middle of
 // three layers, or "" when it is not in one. The list and the Slack line
 // both show it before the title, like the [PATCH 2/3] of a patch series.

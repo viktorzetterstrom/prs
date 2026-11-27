@@ -10,13 +10,13 @@ import (
 
 func TestPRRowMatchesSlackOrder(t *testing.T) {
 	pr := github.PR{Number: 42, Title: "Fix the thing", Additions: 1, Deletions: 2, State: "OPEN"}
-	got := ansi.Strip(renderPR(pr, false, newRowLayout([]github.PR{pr}, 0)))
+	got := ansi.Strip(renderPR(pr, "", false, newRowLayout([]github.PR{pr}, 0)))
 	if want := "    (+1/-2) [#42] Fix the thing"; got != want {
 		t.Fatalf("row = %q, want %q", got, want)
 	}
 
 	pr.Title = strings.Repeat("long title ", 20)
-	got = ansi.Strip(renderPR(pr, true, newRowLayout([]github.PR{pr}, 40)))
+	got = ansi.Strip(renderPR(pr, "", true, newRowLayout([]github.PR{pr}, 40)))
 	if !strings.HasPrefix(got, "  ➤ (+1/-2) [#42] long") || !strings.HasSuffix(got, "…") {
 		t.Fatalf("selected row should keep size and number and truncate the title: %q", got)
 	}
@@ -34,7 +34,7 @@ func TestPRRowsShowAlignedStatusLabels(t *testing.T) {
 	layout := newRowLayout(prs, 120)
 	rows := make([]string, len(prs))
 	for i, pr := range prs {
-		rows[i] = ansi.Strip(renderPR(pr, i == 0, layout))
+		rows[i] = ansi.Strip(renderPR(pr, "", i == 0, layout))
 	}
 
 	if !strings.HasSuffix(rows[0], "approved") {
@@ -55,7 +55,7 @@ func TestPRRowsShowAlignedStatusLabels(t *testing.T) {
 
 func TestLongTitleIsTruncatedBeforeTheLabel(t *testing.T) {
 	pr := github.PR{Number: 7, Title: strings.Repeat("word ", 30), State: "OPEN", ReviewDecision: "CHANGES_REQUESTED"}
-	got := ansi.Strip(renderPR(pr, false, newRowLayout([]github.PR{pr}, 60)))
+	got := ansi.Strip(renderPR(pr, "", false, newRowLayout([]github.PR{pr}, 60)))
 	if !strings.HasSuffix(got, "…  changes requested") {
 		t.Fatalf("title should be cut to make room for the label: %q", got)
 	}

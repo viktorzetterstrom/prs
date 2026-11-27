@@ -50,7 +50,7 @@ type experiment struct {
 var experiments = []experiment{
 	{
 		name:  "stack support",
-		about: "show each pr's place in its github stack",
+		about: "group a github stack's prs and show each one's place in it",
 		flag:  func(e *config.Experimental) *bool { return &e.Stacks },
 	},
 }
