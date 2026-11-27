@@ -520,8 +520,8 @@ func TestStackLayersAreGatheredUnderAHeader(t *testing.T) {
 	v := ansi.Strip(m.View())
 	want := []string{
 		"[#9] Newest, alone",
-		"┌ (+30/-3) Stack of 3",
-		"│ 1. (+10/-1) [#5] Bottom layer",
+		"    (+30/-3) Stack of 3",
+		"├ 1. (+10/-1) [#5] Bottom layer",
 		"└ 2. (+20/-2) [#6] Middle layer",
 		"[#8] Older, alone",
 	}
@@ -572,7 +572,7 @@ func TestStackHeaderLabelWhenNothingBlocks(t *testing.T) {
 func TestStacklessPRsAreNotRegrouped(t *testing.T) {
 	m := newTestModel(t, []string{"a/one"}, "")
 	m, _ = send(m, refreshMsg{prs: []github.PR{{Number: 2, Repo: "a/one"}, {Number: 1, Repo: "a/one"}}})
-	if v := m.View(); strings.ContainsAny(v, "┌│└") {
+	if v := m.View(); strings.ContainsAny(v, "├└") {
 		t.Fatalf("without stacks there should be no tree:\n%s", v)
 	}
 	if len(m.cur().selectable) != 2 {

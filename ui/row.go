@@ -162,7 +162,7 @@ const labelGap = 2
 // the column moves left to leave room for the widest label and titles are
 // truncated to meet it. 1 trailing cell is left as breathing room. A width of
 // zero (unknown) never truncates. Stack headers, and the tree glyphs in front
-// of their layers, count towards the longest row.
+// of stack layers, count towards the longest row.
 func newRowLayout(prs []github.PR, width int) rowLayout {
 	longest, widestLabel := 0, 0
 	fit := func(rowWidth int, l statusLabel, hasLabel bool) {
@@ -180,7 +180,7 @@ func newRowLayout(prs []github.PR, width int) rowLayout {
 		}
 		stats, text := stackHeading(e.stack)
 		l, ok := stackLabel(e.stack)
-		fit(treeWidth+ansi.StringWidth(stats)+1+ansi.StringWidth(text), l, ok)
+		fit(ansi.StringWidth(stats)+1+ansi.StringWidth(text), l, ok)
 		for _, pr := range e.stack {
 			_, lead := prLead(pr)
 			l, ok := statusLabels[pr.Status()]
@@ -243,12 +243,12 @@ func renderPR(pr github.PR, tree string, selected bool, layout rowLayout) string
 
 // renderStackHeader draws the row above a stack's layers: their combined
 // size, how many PRs the stack has, and the stack's label in the shared
-// column.
+// column. Like the first line of the copied stack, it has no tree glyph.
 func renderStackHeader(layers []github.PR, selected bool, layout rowLayout) string {
 	stats, text := stackHeading(layers)
-	lead := treeWidth + ansi.StringWidth(stats) + 1
+	lead := ansi.StringWidth(stats) + 1
 	text = fitTitle(text, layout.labelCol-labelGap-lead, layout)
-	str := treeStyle.Render("┌") + " " + statsStyle.Render(stats) + " " + text
+	str := statsStyle.Render(stats) + " " + text
 	if l, ok := stackLabel(layers); ok {
 		str += labelAfter(lead+ansi.StringWidth(text), l, layout)
 	}
