@@ -118,28 +118,32 @@ func stackHeading(layers []github.PR) (stats, text string) {
 	return fmt.Sprintf("(+%d/-%d)", add, del), github.StackTitle(layers)
 }
 
-// blocksStack is the statuses that keep a layer, and so its stack, from
-// merging.
-var blocksStack = map[string]bool{
-	"draft":             true,
-	"conflicting":       true,
-	"ci_failing":        true,
-	"changes_requested": true,
-	"review_required":   true,
+// stackStatusOrder ranks the statuses of a stack's layers by what most
+// needs attention: first what the author must fix, then waiting on
+// reviewers, then drafts, then the merge queue, since queuing the top layer
+// takes in the whole stack, and last a stack that is all approved.
+var stackStatusOrder = []string{
+	"conflicting",
+	"ci_failing",
+	"changes_requested",
+	"review_required",
+	"draft",
+	"queued",
+	"approved",
 }
 
-// stackLabel is the label on a stack's header. Merging a layer merges every
-// layer below it, so it names the lowest layer that holds the stack back,
-// as in "#156 needs review"; when none does, it is the top layer's label.
+// stackLabel is the label on a stack's header: the status, among its
+// layers', that comes first in stackStatusOrder. A stack whose layers have
+// nothing flagged has no label.
 func stackLabel(layers []github.PR) (statusLabel, bool) {
-	for _, pr := range layers {
-		if s := pr.Status(); blocksStack[s] {
-			l := statusLabels[s]
-			return statusLabel{fmt.Sprintf("#%d %s", pr.Number, l.text), l.style}, true
+	for _, s := range stackStatusOrder {
+		for _, pr := range layers {
+			if pr.Status() == s {
+				return statusLabels[s], true
+			}
 		}
 	}
-	l, ok := statusLabels[layers[len(layers)-1].Status()]
-	return l, ok
+	return statusLabel{}, false
 }
 
 // rowLayout is shared by every PR row so the status labels line up in one

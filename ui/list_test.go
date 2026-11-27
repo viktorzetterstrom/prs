@@ -534,8 +534,10 @@ func TestStackLayersAreGatheredUnderAHeader(t *testing.T) {
 		at = i
 	}
 	// The header names the lowest layer holding the stack back.
-	if strings.Contains(v, "into main") || !strings.Contains(v, "#6 needs review") {
-		t.Fatalf("header should carry the blocking layer's label, and no branch:\n%s", v)
+	header := v[strings.Index(v, "Stack of 3"):]
+	header = header[:strings.Index(header, "\n")]
+	if !strings.HasSuffix(header, "needs review") || strings.Contains(header, "#") {
+		t.Fatalf("header should show the most pressing layer's status, without its number: %q", header)
 	}
 
 	// The header is a row of its own: Enter there copies the whole stack.
@@ -556,6 +558,32 @@ func TestStackLayersAreGatheredUnderAHeader(t *testing.T) {
 	m, _ = send(m, key("down"), key("down"))
 	if pr, _ := m.selectedPR(); pr.Number != 8 {
 		t.Fatalf("after the stack the cursor should reach #8, got #%d", pr.Number)
+	}
+}
+
+func TestStackHeaderShowsWhatMostNeedsAttention(t *testing.T) {
+	layer := func(n int, review, checks string, draft bool) github.PR {
+		pr := stackLayer(n, n, "Layer")
+		pr.ReviewDecision, pr.CheckState, pr.IsDraft = review, checks, draft
+		return pr
+	}
+	cases := []struct {
+		name   string
+		layers []github.PR
+		want   string
+	}{
+		{"failing CI beats waiting on review", []github.PR{layer(1, "REVIEW_REQUIRED", "", false), layer(2, "APPROVED", "FAILURE", false)}, "ci failing"},
+		{"waiting on review beats a draft", []github.PR{layer(1, "APPROVED", "", false), layer(2, "REVIEW_REQUIRED", "", false), layer(3, "", "", true)}, "needs review"},
+		{"a draft beats approved", []github.PR{layer(1, "APPROVED", "", false), layer(2, "", "", true)}, "draft"},
+		{"all approved", []github.PR{layer(1, "APPROVED", "", false), layer(2, "APPROVED", "", false)}, "approved"},
+	}
+	for _, c := range cases {
+		if l, ok := stackLabel(c.layers); !ok || l.text != c.want {
+			t.Errorf("%s: label = %q, want %q", c.name, l.text, c.want)
+		}
+	}
+	if _, ok := stackLabel([]github.PR{layer(1, "", "", false)}); ok {
+		t.Error("a stack with nothing flagged should have no label")
 	}
 }
 

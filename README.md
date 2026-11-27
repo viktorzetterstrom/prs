@@ -36,7 +36,7 @@ Config is stored in `~/.config/prs/config.json`.
 
 The config screen's experimental section has opt-in features that may change or go away. Space turns one on or off.
 
-- **Stack support** asks GitHub which [stack](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs) each open PR belongs to. A stack's layers are listed together, bottom layer first, under a header row with their combined size, how many PRs the stack has and the lowest layer that holds the stack back. Each layer starts with its position, such as `2.`, in the list and in the copied Slack line, so the layers read as a numbered list. Enter on the header copies the whole stack as the list shows it: the header's line, then each layer's.
+- **Stack support** asks GitHub which [stack](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs) each open PR belongs to. A stack's layers are listed together, bottom layer first, under a header row with their combined size, how many PRs the stack has and the status that most needs attention across them, such as `ci failing` before `needs review` before `draft`. Each layer starts with its position, such as `2.`, in the list and in the copied Slack line, so the layers read as a numbered list. Enter on the header copies the whole stack as the list shows it: the header's line, then each layer's.
 
 ## Scripts and agents
 
