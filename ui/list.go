@@ -51,7 +51,7 @@ type listRow struct {
 	prIndex int
 	// stack holds a stack's layers, bottom first, on the row that heads them.
 	stack []github.PR
-	// tree is the glyph in front of a layer of a stack: ├, or └ in front
+	// tree is the glyph in front of a layer of a stack: │, or └ in front
 	// of the last.
 	tree   string
 	empty  bool

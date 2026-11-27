@@ -397,13 +397,15 @@ func StackTitle(layers []PR) string {
 }
 
 // StackTree is the glyph in front of layer i of n, below the line heading
-// their stack: "├" beside each layer, and "└" beside the last, the way the
-// tree command draws a folder's contents.
+// their stack: "│" beside each layer, and "└" beside the last, so together
+// they draw one line down the stack. Slack's font has no box-drawing
+// characters of its own; "├" comes out of a fallback font out of line with
+// these two, so it is not used.
 func StackTree(i, n int) string {
 	if i == n-1 {
 		return "└"
 	}
-	return "├"
+	return "│"
 }
 
 // FormatStackForSlack renders layers of one stack, bottom first, the way the

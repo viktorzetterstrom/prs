@@ -137,7 +137,7 @@ func TestFormatStackForSlack(t *testing.T) {
 		{Number: 6, Title: "Middle", Additions: 20, Deletions: 2, URL: "u6", Stack: stack(2)},
 	}
 	want := "`(+30/-3)` Stack of 3\n" +
-		"├ 1. `(+10/-1)` [#5](u5) Bottom\n" +
+		"│ 1. `(+10/-1)` [#5](u5) Bottom\n" +
 		"└ 2. `(+20/-2)` [#6](u6) Middle"
 	if got := FormatStackForSlack(layers); got != want {
 		t.Errorf("stack slack =\n%s\nwant\n%s", got, want)
