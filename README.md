@@ -30,6 +30,12 @@ Tab and Shift+Tab switch tabs too, and vim keys work (`h`/`l`, `j`/`k`, `g`/`G`,
 
 Config is stored in `~/.config/prs/config.json`.
 
+### Experimental
+
+The config screen's experimental section has opt-in features that may change or go away. Space turns one on or off.
+
+- **Stack support** asks GitHub which [stack](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs) each open PR belongs to, and shows a layer's position, such as `2/3`, before its title, in the list and in the copied Slack line.
+
 ## Scripts and agents
 
 When stdout is not a terminal, `prs` prints a tab-separated list and exits instead of opening the UI.

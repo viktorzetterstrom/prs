@@ -5,20 +5,21 @@ import (
 	"testing"
 )
 
-// TestGetPRsLive hits GitHub through gh. Opt in with PRS_LIVE_REPOS=owner/a,owner/b.
+// TestGetPRsLive hits GitHub through gh. Opt in with PRS_LIVE_REPOS=owner/a,owner/b,
+// and add PRS_LIVE_STACKS=1 to ask for stacks too.
 func TestGetPRsLive(t *testing.T) {
 	spec := os.Getenv("PRS_LIVE_REPOS")
 	if spec == "" {
 		t.Skip("set PRS_LIVE_REPOS=owner/a,owner/b to run against GitHub")
 	}
 	repos := splitComma(spec)
-	prs, errs := GetPRs(repos)
+	prs, errs := GetPRs(repos, Options{Stacks: os.Getenv("PRS_LIVE_STACKS") != ""})
 	for _, e := range errs {
 		t.Errorf("%v", e)
 	}
 	t.Logf("%d open PRs", len(prs))
 	for _, pr := range prs {
-		t.Logf("  %-17s %-16s #%d %s", pr.Status(), pr.ShortRepo(), pr.Number, pr.Title)
+		t.Logf("  %-17s %-16s #%d %s %s", pr.Status(), pr.ShortRepo(), pr.Number, pr.StackTag(), pr.Title)
 	}
 
 	suggested, err := SuggestRepos()

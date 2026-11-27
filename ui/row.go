@@ -49,12 +49,22 @@ var statusLabels = map[string]statusLabel{
 	"closed":            label("closed", ghDanger),
 }
 
-// prLead is the part of a row before the title: size, number and the spaces
-// after each. The order matches the copied Slack line.
-func prLead(pr github.PR) (stats, number string, width int) {
-	stats = fmt.Sprintf("(+%d/-%d)", pr.Additions, pr.Deletions)
-	number = fmt.Sprintf("[#%d]", pr.Number)
-	return stats, number, ansi.StringWidth(stats) + 1 + ansi.StringWidth(number) + 1
+// stackTagStyle is for a layer's position in its stack, such as 2/3.
+var stackTagStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+
+// prLead is the part of a row before the title, styled, and its width in
+// cells: size, number, the position in a stack if the PR is in one, and the
+// space after each. The order matches the copied Slack line.
+func prLead(pr github.PR) (lead string, width int) {
+	stats := fmt.Sprintf("(+%d/-%d)", pr.Additions, pr.Deletions)
+	number := fmt.Sprintf("[#%d]", pr.Number)
+	lead = statsStyle.Render(stats) + " " + numberStyle.Render(number) + " "
+	width = ansi.StringWidth(stats) + 1 + ansi.StringWidth(number) + 1
+	if tag := pr.StackTag(); tag != "" {
+		lead += stackTagStyle.Render(tag) + " "
+		width += ansi.StringWidth(tag) + 1
+	}
+	return lead, width
 }
 
 // rowLayout is shared by every PR row so the status labels line up in one
@@ -77,7 +87,7 @@ const labelGap = 2
 func newRowLayout(prs []github.PR, width int) rowLayout {
 	longest, widestLabel := 0, 0
 	for _, pr := range prs {
-		_, _, lead := prLead(pr)
+		_, lead := prLead(pr)
 		longest = max(longest, lead+ansi.StringWidth(pr.Title))
 		if l, ok := statusLabels[pr.Status()]; ok {
 			widestLabel = max(widestLabel, ansi.StringWidth(l.text))
@@ -96,7 +106,7 @@ func newRowLayout(prs []github.PR, width int) rowLayout {
 // renderPR draws one PR line: size, number, title, then its status label in
 // the shared column. The title is truncated to end before that column.
 func renderPR(pr github.PR, selected bool, layout rowLayout) string {
-	stats, number, lead := prLead(pr)
+	leadText, lead := prLead(pr)
 	titleEnd := layout.labelCol - labelGap
 
 	title := pr.Title
@@ -106,7 +116,7 @@ func renderPR(pr github.PR, selected bool, layout rowLayout) string {
 		title = strings.TrimRight(ansi.Truncate(title, budget-1, ""), " ") + "…"
 	}
 
-	str := statsStyle.Render(stats) + " " + numberStyle.Render(number) + " " + title
+	str := leadText + title
 	if l, ok := statusLabels[pr.Status()]; ok {
 		pad := max(labelGap, layout.labelCol-lead-ansi.StringWidth(title))
 		str += strings.Repeat(" ", pad) + l.style.Render(l.text)

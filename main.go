@@ -99,34 +99,36 @@ func run(args []string, stdout, stderr io.Writer, interactive bool) error {
 	if !github.DemoMode {
 		currentRepo = github.CurrentRepo()
 	}
-	repos, configExists, err := resolveRepos(currentRepo)
+	cfg, configExists, err := resolveConfig(currentRepo)
 	if err != nil {
 		return err
 	}
 	if interactive && !*asJSON {
-		return ui.Run(repos, currentRepo, !configExists)
+		return ui.Run(cfg.Repos, currentRepo, !configExists, cfg.Experimental)
 	}
-	return printPRs(repos, stdout, stderr, *asJSON)
+	return printPRs(cfg.Repos, github.Options{Stacks: cfg.Experimental.Stacks}, stdout, stderr, *asJSON)
 }
 
-// resolveRepos builds the initial tracked-repo list: the config file wins,
-// otherwise fall back to the repo of the current directory. The bool reports
-// whether a config file existed, which decides if the repo picker opens first.
-func resolveRepos(currentRepo string) (repos []string, configExists bool, err error) {
+// resolveConfig loads the config and settles its tracked-repo list: the
+// config file's list wins, otherwise fall back to the repo of the current
+// directory. The bool reports whether a config file existed, which decides
+// if the repo picker opens first. Demo mode never reads the file, so every
+// experimental setting starts off there.
+func resolveConfig(currentRepo string) (cfg config.Config, configExists bool, err error) {
 	if github.DemoMode {
-		return slices.Clone(github.DemoRepos), true, nil
+		return config.Config{Repos: slices.Clone(github.DemoRepos)}, true, nil
 	}
 	cfg, found, err := config.Load()
 	if err != nil {
-		return nil, found, fmt.Errorf("could not read config: %w", err)
+		return config.Config{}, found, fmt.Errorf("could not read config: %w", err)
 	}
 	if len(cfg.Repos) > 0 {
-		return cfg.Repos, true, nil
+		return cfg, true, nil
 	}
 	if currentRepo != "" {
-		return []string{currentRepo}, found, nil
+		cfg.Repos = []string{currentRepo}
 	}
-	return nil, found, nil
+	return cfg, found, nil
 }
 
 // formatVersion names the build. `go install …@version` and, since Go 1.24,

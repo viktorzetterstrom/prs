@@ -278,9 +278,53 @@ func TestPickerEnterConfirmsAndSpaceToggles(t *testing.T) {
 	if len(m.repos) != 2 {
 		t.Fatalf("enter must not toggle, repos=%v", m.repos)
 	}
-	m, _ = send(m, key("c"), key("G"), key(" "))
+	// G goes to the bottom, the experimental settings; the last repo is
+	// just above them.
+	m, _ = send(m, key("c"), key("G"), key("up"), key(" "))
 	if len(m.repos) != 1 || m.repos[0] != "a/one" {
-		t.Fatalf("G then space should untrack the last repo, repos=%v", m.repos)
+		t.Fatalf("G, up, space should untrack the last repo, repos=%v", m.repos)
+	}
+}
+
+func TestStackSupportTogglesSavesAndRefetches(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "")
+	m.tabs[tabOpen].loaded = true
+	m, _ = send(m, key("c"))
+	if v := m.View(); !strings.Contains(v, "experimental") || !strings.Contains(v, "○ stack support") {
+		t.Fatalf("config should list stack support, off, under experimental:\n%s", v)
+	}
+
+	m, _ = send(m, key("G"), key(" "))
+	if !m.experimental.Stacks {
+		t.Fatal("space on stack support should turn it on")
+	}
+	if !strings.Contains(m.View(), "✓ stack support") {
+		t.Fatalf("stack support should show as on:\n%s", m.View())
+	}
+	cfg, _, err := config.Load()
+	if err != nil || !cfg.Experimental.Stacks || !slices.Equal(cfg.Repos, []string{"a/one"}) {
+		t.Fatalf("the setting should be saved with the repos: %+v %v", cfg, err)
+	}
+	if m.tabs[tabOpen].loaded {
+		t.Fatal("turning on stacks should invalidate the list so it refetches with them")
+	}
+	if !m.fetchOptions().Stacks {
+		t.Fatal("fetches should now ask for stacks")
+	}
+
+	m, _ = send(m, key(" "))
+	if m.experimental.Stacks {
+		t.Fatal("a second space should turn it off again")
+	}
+}
+
+func TestCursorOnASettingStaysThereWhenSuggestionsArrive(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "")
+	m, _ = send(m, key("c"), key("G"))
+	m, _ = send(m, suggestMsg{repos: []string{"a/sug1", "a/sug2"}})
+	m, _ = send(m, key(" "))
+	if !m.experimental.Stacks || slices.Contains(m.repos, "a/sug2") {
+		t.Fatalf("space should still toggle stack support, not a suggestion: stacks=%v repos=%v", m.experimental.Stacks, m.repos)
 	}
 }
 

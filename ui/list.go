@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/viktorzetterstrom/prs/config"
 	"github.com/viktorzetterstrom/prs/github"
 )
 
@@ -135,6 +136,10 @@ type model struct {
 	// leaves it, so the picker does not reappear on the next launch.
 	firstRun bool
 
+	// experimental is the opt-in features from the config file, toggled on
+	// the config screen and saved with the repo list.
+	experimental config.Experimental
+
 	mode      mode
 	cfgCursor int
 	cfgDirty  bool
@@ -174,7 +179,7 @@ func openInBrowser(url string) tea.Cmd {
 	}
 }
 
-func fetchPRs(repos []string, gen int, t tab) tea.Cmd {
+func fetchPRs(repos []string, gen int, t tab, opts github.Options) tea.Cmd {
 	repos = slices.Clone(repos)
 	return func() tea.Msg {
 		var prs []github.PR
@@ -182,10 +187,15 @@ func fetchPRs(repos []string, gen int, t tab) tea.Cmd {
 		if t == tabHistory {
 			prs, errs = github.GetClosedSince(repos, time.Now().Add(-historyWindow))
 		} else {
-			prs, errs = github.GetPRs(repos)
+			prs, errs = github.GetPRs(repos, opts)
 		}
 		return refreshMsg{gen: gen, tab: t, prs: prs, errs: errs}
 	}
+}
+
+// fetchOptions is what the experimental settings ask of a fetch.
+func (m model) fetchOptions() github.Options {
+	return github.Options{Stacks: m.experimental.Stacks}
 }
 
 // busy reports whether anything is in flight, which is when the spinner
@@ -205,7 +215,7 @@ func (m *model) startFetch() tea.Cmd {
 		return nil
 	}
 	m.cur().loading = true
-	return tea.Batch(fetchPRs(m.repos, m.gen, m.tab), m.spinner.Tick)
+	return tea.Batch(fetchPRs(m.repos, m.gen, m.tab, m.fetchOptions()), m.spinner.Tick)
 }
 
 // Init only returns commands. The loading flags they correspond to are set
@@ -216,7 +226,7 @@ func (m model) Init() tea.Cmd {
 		tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) }),
 	}
 	if m.cur().loading {
-		cmds = append(cmds, fetchPRs(m.repos, m.gen, m.tab), m.spinner.Tick)
+		cmds = append(cmds, fetchPRs(m.repos, m.gen, m.tab, m.fetchOptions()), m.spinner.Tick)
 	}
 	if m.suggestLoading {
 		cmds = append(cmds, fetchSuggestions, m.spinner.Tick)
@@ -394,10 +404,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case suggestMsg:
+		repoRows := len(m.configRows())
 		m.suggestLoading = false
 		m.suggestFetched = true
 		m.suggestErr = msg.err
 		m.suggestions = msg.repos
+		// Suggestions land above the experimental section; keep a cursor
+		// that was moved down there on the same setting. With no repo rows
+		// yet the cursor has not moved, and stays at the top.
+		if repoRows > 0 && m.cfgCursor >= repoRows {
+			m.cfgCursor += len(m.configRows()) - repoRows
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -702,10 +719,12 @@ func newModel(repos []string, currentRepo string, firstRun bool) model {
 }
 
 // Run starts the interactive list. repos is the tracked set, currentRepo the
-// repo of the current directory (offered on the config screen), and firstRun
-// opens on the repo picker and saves what is chosen when the user leaves it.
-func Run(repos []string, currentRepo string, firstRun bool) error {
+// repo of the current directory (offered on the config screen), firstRun
+// opens on the repo picker and saves what is chosen when the user leaves it,
+// and experimental is the opt-in features from the config file.
+func Run(repos []string, currentRepo string, firstRun bool, experimental config.Experimental) error {
 	m := newModel(repos, currentRepo, firstRun)
+	m.experimental = experimental
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

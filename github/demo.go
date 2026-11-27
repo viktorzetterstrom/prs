@@ -5,8 +5,10 @@ import "time"
 // demoPRs returns canned data for the --demo flag. Each entry is designed to
 // exercise a distinct branch of Status so the TUI shows every state.
 // The set is split across DemoRepos by PR number parity so the multi-repo
-// view interleaves rows from both.
-func demoPRs(repo string) []PR {
+// view interleaves rows from both. The three layers of the demo stack have
+// even numbers, so they share a repo as a real stack must; they come back
+// as plain PRs unless opts asks for stacks.
+func demoPRs(repo string, opts Options) []PR {
 	all := demoAll()
 	var out []PR
 	for i, pr := range all {
@@ -14,6 +16,9 @@ func demoPRs(repo string) []PR {
 			continue
 		}
 		pr.UpdatedAt = time.Now().Add(-time.Duration(i) * time.Hour)
+		if !opts.Stacks {
+			pr.Stack = nil
+		}
 		out = append(out, pr)
 	}
 	return out
@@ -27,6 +32,29 @@ func demoAll() []PR {
 			URL:   "https://github.com/example/repo/pull/143",
 			State: "OPEN", Mergeable: "MERGEABLE", ReviewDecision: "APPROVED",
 			CheckState: "SUCCESS", InMergeQueue: true,
+		},
+		{
+			Number: 156, Title: "Retry failed webhooks from the queue",
+			Additions: 120, Deletions: 8,
+			URL:   "https://github.com/example/repo/pull/156",
+			State: "OPEN", Mergeable: "MERGEABLE", ReviewDecision: "REVIEW_REQUIRED",
+			CheckState: "SUCCESS",
+			Stack:      &Stack{Number: 7, Size: 3, Position: 2, Base: "main"},
+		},
+		{
+			Number: 154, Title: "Add a table for queued webhook retries",
+			Additions: 40, Deletions: 2,
+			URL:   "https://github.com/example/repo/pull/154",
+			State: "OPEN", Mergeable: "MERGEABLE", ReviewDecision: "APPROVED",
+			CheckState: "SUCCESS",
+			Stack:      &Stack{Number: 7, Size: 3, Position: 1, Base: "main"},
+		},
+		{
+			Number: 158, Title: "Show retries in the webhook log",
+			Additions: 35, Deletions: 4,
+			URL:   "https://github.com/example/repo/pull/158",
+			State: "OPEN", IsDraft: true,
+			Stack: &Stack{Number: 7, Size: 3, Position: 3, Base: "main"},
 		},
 		{
 			Number: 142, Title: "Approved, ready to merge",

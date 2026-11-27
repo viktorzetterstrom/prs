@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -41,6 +42,30 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if len(got.Repos) != 2 || got.Repos[0] != want.Repos[0] || got.Repos[1] != want.Repos[1] {
 		t.Fatalf("round trip mismatch: got %v want %v", got.Repos, want.Repos)
+	}
+}
+
+func TestExperimentalSettingsRoundTripAndStayOutUntilOn(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "prs", "config.json")
+
+	if err := (Config{Repos: []string{"a/b"}}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(path); strings.Contains(string(data), "experimental") {
+		t.Fatalf("an all-off experimental section should not be written:\n%s", data)
+	}
+
+	if err := (Config{Repos: []string{"a/b"}, Experimental: Experimental{Stacks: true}}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(path); !strings.Contains(string(data), `"stacks": true`) {
+		t.Fatalf("stack support should be saved:\n%s", data)
+	}
+	got, _, err := Load()
+	if err != nil || !got.Experimental.Stacks {
+		t.Fatalf("stack support did not round trip: %+v %v", got, err)
 	}
 }
 

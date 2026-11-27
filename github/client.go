@@ -38,6 +38,31 @@ type PR struct {
 	// Repo is the OWNER/REPO the PR belongs to. GetPRs stamps it after each
 	// per-repo call.
 	Repo string
+
+	// Stack is set when the PR is a layer of a GitHub stack and the fetch
+	// asked for stacks (Options.Stacks); nil otherwise.
+	Stack *Stack
+}
+
+// Stack is where a PR sits in a GitHub stack: a chain of PRs where each
+// targets the branch of the one below, and the bottom one targets Base.
+type Stack struct {
+	// Number identifies the stack within its repository.
+	Number int
+	// Size is how many PRs the stack has, the user's or not.
+	Size int
+	// Position is this PR's layer: 1 is the bottom, the one closest to Base.
+	Position int
+	// Base is the branch the stack merges into, usually main.
+	Base string
+}
+
+// Options turns on optional parts of a fetch.
+type Options struct {
+	// Stacks asks GitHub which stack each PR belongs to. It is opt-in
+	// because stacks are new: a GitHub that does not know the fields fails
+	// the whole query.
+	Stacks bool
 }
 
 // ShortRepo returns the repo name without its owner, for compact display.
@@ -60,7 +85,7 @@ var DemoRepos = []string{"example/platform", "example/config"}
 // GraphQL API rather than `gh pr list` because only GraphQL has the merge
 // queue flag and GitHub's own combined check result. The repository field
 // is there so a repo that does not exist fails the query; search alone
-// would just come back empty.
+// would just come back empty. The %s is where stackFields go when asked for.
 const prQuery = `query($owner: String!, $name: String!, $q: String!) {
   repository(owner: $owner, name: $name) { id }
   search(query: $q, type: ISSUE, first: 100) {
@@ -68,11 +93,26 @@ const prQuery = `query($owner: String!, $name: String!, $q: String!) {
       ... on PullRequest {
         number title additions deletions url state isDraft mergeable
         reviewDecision updatedAt closedAt isInMergeQueue
-        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }%s
       }
     }
   }
 }`
+
+// stackFields ask which stack a PR belongs to and at what position. Both
+// are null for a PR outside a stack.
+const stackFields = `
+        stack { number size baseRefName }
+        stackEntry { position }`
+
+// buildPRQuery is prQuery with or without stackFields.
+func buildPRQuery(stacks bool) string {
+	extra := ""
+	if stacks {
+		extra = stackFields
+	}
+	return fmt.Sprintf(prQuery, extra)
+}
 
 // prNode is one PullRequest in prQuery's response.
 type prNode struct {
@@ -97,6 +137,14 @@ type prNode struct {
 			} `json:"commit"`
 		} `json:"nodes"`
 	} `json:"commits"`
+	Stack *struct {
+		Number      int    `json:"number"`
+		Size        int    `json:"size"`
+		BaseRefName string `json:"baseRefName"`
+	} `json:"stack"`
+	StackEntry *struct {
+		Position int `json:"position"`
+	} `json:"stackEntry"`
 }
 
 func (n prNode) pr() PR {
@@ -117,6 +165,14 @@ func (n prNode) pr() PR {
 	if c := n.Commits.Nodes; len(c) > 0 && c[0].Commit.StatusCheckRollup != nil {
 		pr.CheckState = c[0].Commit.StatusCheckRollup.State
 	}
+	if n.Stack != nil && n.StackEntry != nil {
+		pr.Stack = &Stack{
+			Number:   n.Stack.Number,
+			Size:     n.Stack.Size,
+			Position: n.StackEntry.Position,
+			Base:     n.Stack.BaseRefName,
+		}
+	}
 	return pr
 }
 
@@ -132,12 +188,12 @@ func (e RepoError) Error() string { return fmt.Sprintf("%s: %v", e.Repo, e.Err) 
 // GetPRs fetches the caller's open PRs in every repo concurrently and returns
 // them merged, most recently updated first, together with one error per repo
 // that failed.
-func GetPRs(repos []string) ([]PR, []RepoError) {
+func GetPRs(repos []string, opts Options) ([]PR, []RepoError) {
 	prs, errs := fetchEach(repos, func(repo string) ([]PR, error) {
 		if DemoMode {
-			return demoPRs(repo), nil
+			return demoPRs(repo, opts), nil
 		}
-		return searchPRs(repo, "is:open")
+		return searchPRs(repo, "is:open", opts.Stacks)
 	})
 	sort.SliceStable(prs, func(a, b int) bool {
 		return prs[a].UpdatedAt.After(prs[b].UpdatedAt)
@@ -153,7 +209,7 @@ func GetClosedSince(repos []string, since time.Time) ([]PR, []RepoError) {
 		if DemoMode {
 			return demoClosedPRs(repo), nil
 		}
-		return searchPRs(repo, "is:closed closed:>="+since.UTC().Format(time.RFC3339))
+		return searchPRs(repo, "is:closed closed:>="+since.UTC().Format(time.RFC3339), false)
 	})
 	sort.SliceStable(prs, func(a, b int) bool {
 		return prs[a].ClosedAt.After(prs[b].ClosedAt)
@@ -197,14 +253,15 @@ func fetchEach(repos []string, fetch func(repo string) ([]PR, error)) ([]PR, []R
 }
 
 // searchPRs runs prQuery for the caller's PRs in repo that match filter, a
-// GitHub search qualifier such as "is:open".
-func searchPRs(repo, filter string) ([]PR, error) {
+// GitHub search qualifier such as "is:open", asking for stacks when stacks
+// is set.
+func searchPRs(repo, filter string, stacks bool) ([]PR, error) {
 	owner, name, _ := strings.Cut(repo, "/")
 	output, err := runGH("api", "graphql",
 		"-f", "owner="+owner,
 		"-f", "name="+name,
 		"-f", "q=repo:"+repo+" is:pr author:@me "+filter,
-		"-f", "query="+prQuery)
+		"-f", "query="+buildPRQuery(stacks))
 	if err != nil {
 		return nil, err
 	}
@@ -308,14 +365,30 @@ func ValidRepo(s string) bool {
 // FormatForSlack renders the PR as a Slack-flavoured markdown line. The
 // link text is the bare PR number; the URL already identifies the repo. The
 // link sits before the title rather than at the end, because a pasted line
-// ending in "#123" makes Slack pop up its channel autocomplete.
+// ending in "#123" makes Slack pop up its channel autocomplete. A layer of a
+// stack has its StackTag between the link and the title.
 func (pr PR) FormatForSlack() string {
-	return fmt.Sprintf("`(+%d/-%d)` [#%d](%s) %s",
+	tag := ""
+	if t := pr.StackTag(); t != "" {
+		tag = "`" + t + "` "
+	}
+	return fmt.Sprintf("`(+%d/-%d)` [#%d](%s) %s%s",
 		pr.Additions,
 		pr.Deletions,
 		pr.Number,
 		pr.URL,
+		tag,
 		pr.Title)
+}
+
+// StackTag is the PR's place in its stack, such as "2/3" for the middle of
+// three layers, or "" when it is not in one. The list and the Slack line
+// both show it before the title, like the [PATCH 2/3] of a patch series.
+func (pr PR) StackTag() string {
+	if pr.Stack == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d/%d", pr.Stack.Position, pr.Stack.Size)
 }
 
 // CIStatus folds CheckState into FAILURE / PENDING / SUCCESS / "". Empty

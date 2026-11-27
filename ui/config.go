@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/viktorzetterstrom/prs/config"
 	"github.com/viktorzetterstrom/prs/github"
 )
@@ -34,12 +35,29 @@ func (m *model) saveConfig() {
 		// repo list still changes so the UI can be exercised.
 		return
 	}
-	m.cfgErr = config.Config{Repos: m.repos}.Save()
+	m.cfgErr = config.Config{Repos: m.repos, Experimental: m.experimental}.Save()
 }
 
-// applyRepoChange persists the repo list and invalidates the view so the
-// next visit refetches against the new set.
-func (m *model) applyRepoChange() {
+// experiment is one row of the config screen's experimental section: an
+// opt-in feature that may change or go away.
+type experiment struct {
+	name  string
+	about string
+	// flag points at the setting's field in a config.Experimental.
+	flag func(*config.Experimental) *bool
+}
+
+var experiments = []experiment{
+	{
+		name:  "stack support",
+		about: "show each pr's place in its github stack",
+		flag:  func(e *config.Experimental) *bool { return &e.Stacks },
+	},
+}
+
+// applyChange persists the config and invalidates the view so the next
+// visit refetches with the new repos and settings.
+func (m *model) applyChange() {
 	m.cfgDirty = true
 	m.gen++
 	m.saveConfig()
@@ -52,6 +70,9 @@ func (m *model) applyRepoChange() {
 }
 
 const suggestedTitle = "suggested from your recent prs"
+
+// aboutStyle is the dim explanation after an experimental setting's name.
+var aboutStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 
 // repoSection is one group of rows on the config screen.
 type repoSection struct {
@@ -111,7 +132,9 @@ func (m *model) trackRepo(repo string) {
 	m.repos = repos
 }
 
-func (m model) configRowCount() int { return len(m.configRows()) }
+// configRowCount is every row the cursor can reach: the repos, then the
+// experimental settings below them.
+func (m model) configRowCount() int { return len(m.configRows()) + len(experiments) }
 
 func (m *model) leaveConfig() tea.Cmd {
 	m.mode = modeList
@@ -135,7 +158,7 @@ func (m *model) leaveConfig() tea.Cmd {
 func (m model) updateConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.configRows()
 	key := msg.String()
-	if cursor, ok := moveCursor(key, m.cfgCursor, len(rows), 5); ok {
+	if cursor, ok := moveCursor(key, m.cfgCursor, m.configRowCount(), 5); ok {
 		m.cfgCursor = cursor
 		return m, nil
 	}
@@ -146,14 +169,19 @@ func (m model) updateConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Checklist convention: space toggles, enter confirms.
 		return m, m.leaveConfig()
 	case " ":
-		if m.cfgCursor < len(rows) {
+		switch i := m.cfgCursor - len(rows); {
+		case i < 0:
 			repo := rows[m.cfgCursor]
 			if idx := slices.Index(m.repos, repo); idx >= 0 {
 				m.repos = slices.Delete(m.repos, idx, idx+1)
 			} else {
 				m.trackRepo(repo)
 			}
-			m.applyRepoChange()
+			m.applyChange()
+		case i < len(experiments):
+			flag := experiments[i].flag(&m.experimental)
+			*flag = !*flag
+			m.applyChange()
 		}
 	case "a":
 		m.mode = modeAddRepo
@@ -182,7 +210,7 @@ func (m model) updateAddRepo(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.input.Blur()
 		if !slices.Contains(m.repos, repo) {
 			m.trackRepo(repo)
-			m.applyRepoChange()
+			m.applyChange()
 		}
 		m.cfgCursor = slices.Index(m.configRows(), repo)
 		return m, nil
@@ -254,6 +282,23 @@ func (m model) viewConfig() string {
 		b.WriteString("\n")
 	case m.suggestFetched && len(m.suggestions) == 0:
 		b.WriteString("\n" + timestampStyle.Render("no recent pr activity found to suggest from."))
+		b.WriteString("\n")
+	}
+
+	// The experimental settings come after every repo row, so their cursor
+	// rows are numbered on from the repos'.
+	b.WriteString("\n" + sectionStyle.Render("experimental") + "\n")
+	for i, e := range experiments {
+		mark := uncheckedStyle.Render("○")
+		if *e.flag(&m.experimental) {
+			mark = checkedStyle.Render("✓")
+		}
+		line := mark + " " + e.name + "  " + aboutStyle.Render(e.about)
+		if row+i == m.cfgCursor && m.mode == modeConfig {
+			b.WriteString(selectedItemStyle.Render("➤ " + line))
+		} else {
+			b.WriteString(itemStyle.Render(line))
+		}
 		b.WriteString("\n")
 	}
 

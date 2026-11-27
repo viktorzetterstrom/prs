@@ -51,8 +51,8 @@ func TestJSONListsEveryDemoPR(t *testing.T) {
 	if !reflect.DeepEqual(got.Repos, github.DemoRepos) {
 		t.Errorf("repos = %v, want %v", got.Repos, github.DemoRepos)
 	}
-	if len(got.PRs) != 8 {
-		t.Fatalf("expected the 8 demo PRs, got %d", len(got.PRs))
+	if len(got.PRs) != 11 {
+		t.Fatalf("expected the 11 demo PRs, got %d", len(got.PRs))
 	}
 	for _, pr := range got.PRs {
 		if pr.Repo == "" || pr.Status == "" || pr.URL == "" {
@@ -84,7 +84,7 @@ func TestWithoutTerminalPrintsPlainList(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	if len(lines) != 8 {
+	if len(lines) != 11 {
 		t.Fatalf("expected one line per demo PR, got %d:\n%s", len(lines), stdout)
 	}
 	for _, l := range lines {
@@ -110,9 +110,37 @@ func TestPartialFailureStillPrintsAndFails(t *testing.T) {
 	}
 }
 
+func TestJSONHasStackOnlyForLayers(t *testing.T) {
+	var out bytes.Buffer
+	prs := []github.PR{
+		{Repo: "a/ok", Number: 2, Title: "Layer", URL: "u2", Stack: &github.Stack{Number: 7, Size: 3, Position: 2, Base: "main"}},
+		{Repo: "a/ok", Number: 1, Title: "Alone", URL: "u1"},
+	}
+	if err := writeJSON(&out, []string{"a/ok"}, prs, nil); err != nil {
+		t.Fatal(err)
+	}
+	var got listJSON
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := stackJSON{Number: 7, Size: 3, Position: 2, Base: "main"}
+	if s := got.PRs[0].Stack; s == nil || *s != want {
+		t.Errorf("layer stack = %+v, want %+v", s, want)
+	}
+	if !strings.Contains(got.PRs[0].Slack, "`2/3` Layer") {
+		t.Errorf("a layer's Slack line should carry its position: %q", got.PRs[0].Slack)
+	}
+	if got.PRs[1].Stack != nil {
+		t.Errorf("a PR outside a stack should have no stack field: %+v", got.PRs[1].Stack)
+	}
+	if strings.Count(out.String(), `"stack"`) != 1 {
+		t.Errorf("stack should be left out of PRs outside one:\n%s", out.String())
+	}
+}
+
 func TestNoReposIsAnError(t *testing.T) {
 	var out, errOut bytes.Buffer
-	err := printPRs(nil, &out, &errOut, true)
+	err := printPRs(nil, github.Options{}, &out, &errOut, true)
 	if err == nil || !strings.Contains(err.Error(), "prs repos add") {
 		t.Fatalf("expected a hint to add a repo, got %v", err)
 	}
@@ -223,7 +251,7 @@ func TestSkillPrintsAndInstalls(t *testing.T) {
 func TestSkillDocumentsTheJSON(t *testing.T) {
 	for _, typ := range []reflect.Type{reflect.TypeOf(listJSON{}), reflect.TypeOf(prJSON{})} {
 		for i := range typ.NumField() {
-			tag := typ.Field(i).Tag.Get("json")
+			tag, _, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
 			if !strings.Contains(skillDoc, `"`+tag+`":`) {
 				t.Errorf("the example in skill/SKILL.md has no %q field", tag)
 			}
@@ -232,7 +260,7 @@ func TestSkillDocumentsTheJSON(t *testing.T) {
 
 	github.DemoMode = true
 	t.Cleanup(func() { github.DemoMode = false })
-	prs, _ := github.GetPRs(github.DemoRepos)
+	prs, _ := github.GetPRs(github.DemoRepos, github.Options{Stacks: true})
 	for _, pr := range prs {
 		if !strings.Contains(skillDoc, "`"+pr.Status()+"`") {
 			t.Errorf("skill/SKILL.md does not describe the %q status", pr.Status())

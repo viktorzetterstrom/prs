@@ -27,6 +27,17 @@ type prJSON struct {
 	Deletions int       `json:"deletions"`
 	UpdatedAt time.Time `json:"updatedAt"`
 	Slack     string    `json:"slack"`
+	// Stack is only there for a layer of a GitHub stack, and only with
+	// stack support turned on.
+	Stack *stackJSON `json:"stack,omitempty"`
+}
+
+// stackJSON is where a PR sits in its GitHub stack.
+type stackJSON struct {
+	Number   int    `json:"number"`
+	Size     int    `json:"size"`
+	Position int    `json:"position"`
+	Base     string `json:"base"`
 }
 
 type repoErrorJSON struct {
@@ -46,11 +57,11 @@ type listJSON struct {
 // lines. Repos that fail do not hide the others; they are reported (in the
 // JSON, or on stderr) and turn the result into an error so the exit code
 // says something went wrong.
-func printPRs(repos []string, stdout, stderr io.Writer, asJSON bool) error {
+func printPRs(repos []string, opts github.Options, stdout, stderr io.Writer, asJSON bool) error {
 	if len(repos) == 0 {
 		return errors.New("no repos tracked; add one with `prs repos add OWNER/REPO`")
 	}
-	prs, errs := github.GetPRs(repos)
+	prs, errs := github.GetPRs(repos, opts)
 
 	if asJSON {
 		if err := writeJSON(stdout, repos, prs, errs); err != nil {
@@ -79,7 +90,7 @@ func writeJSON(w io.Writer, repos []string, prs []github.PR, errs []github.RepoE
 		Errors: make([]repoErrorJSON, 0, len(errs)),
 	}
 	for _, pr := range prs {
-		out.PRs = append(out.PRs, prJSON{
+		p := prJSON{
 			Repo:      pr.Repo,
 			Number:    pr.Number,
 			Title:     pr.Title,
@@ -93,7 +104,11 @@ func writeJSON(w io.Writer, repos []string, prs []github.PR, errs []github.RepoE
 			Deletions: pr.Deletions,
 			UpdatedAt: pr.UpdatedAt,
 			Slack:     pr.FormatForSlack(),
-		})
+		}
+		if s := pr.Stack; s != nil {
+			p.Stack = &stackJSON{Number: s.Number, Size: s.Size, Position: s.Position, Base: s.Base}
+		}
+		out.PRs = append(out.PRs, p)
 	}
 	for _, e := range errs {
 		out.Errors = append(out.Errors, repoErrorJSON{Repo: e.Repo, Error: e.Err.Error()})

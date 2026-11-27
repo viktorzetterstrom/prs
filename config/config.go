@@ -15,6 +15,17 @@ import (
 
 type Config struct {
 	Repos []string `json:"repos"`
+	// Experimental holds opt-in features that may change or go away. It is
+	// left out of the file until one is turned on.
+	Experimental Experimental `json:"experimental,omitzero"`
+}
+
+// Experimental is the set of features behind the config screen's
+// experimental section, all off by default.
+type Experimental struct {
+	// Stacks asks GitHub which stack each open PR belongs to, and shows
+	// the layers of a stack together with each one's position.
+	Stacks bool `json:"stacks,omitempty"`
 }
 
 func Path() (string, error) {

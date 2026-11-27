@@ -54,7 +54,23 @@ prs --json
   - `review`: GitHub's review decision: `APPROVED`, `CHANGES_REQUESTED`, `REVIEW_REQUIRED`, or `""` when GitHub gives none, usually because the repo does not require reviews.
   - `mergeable`: `MERGEABLE`, `CONFLICTING`, or `UNKNOWN` when GitHub has not computed it yet.
   - `slack`: the line the user posts in Slack for this PR. When they ask for Slack lines, give these exactly as they are, one per line.
+  - `stack`: only on a layer of a GitHub stack, and only when the user has turned on stack support (see below).
 - `errors`: repos that could not be fetched, each with gh's message. When there are any, the exit code is 1, but the other repos' PRs are still in `prs`.
+
+### Stacked PRs (experimental)
+
+When the user has turned on stack support in the experimental section of prs's config screen, a PR that is a layer of a GitHub stack also has a `stack` field, and its `slack` line shows its position before the title:
+
+```json
+"stack": { "number": 7, "size": 3, "position": 2, "base": "main" },
+"slack": "`(+120/-8)` [#156](https://github.com/owner/platform/pull/156) `2/3` Retry failed webhooks from the queue"
+```
+
+- `position`: the PR's layer. 1 is the bottom, the one that targets `base`; each layer above targets the branch of the one below. Layers are reviewed and merged from the bottom up, and merging a layer merges every layer below it.
+- `size`: how many PRs the stack has. Layers the user did not author are counted but are not in `prs`.
+- `number`: identifies the stack within its repo; layers with the same `repo` and `number` belong together.
+
+To post a stack, give its layers' `slack` lines bottom first.
 
 ## Tracked repos
 
