@@ -71,8 +71,24 @@ func (m *model) applyChange() {
 
 const suggestedTitle = "suggested from your recent prs"
 
-// aboutStyle is the dim explanation after an experimental setting's name.
-var aboutStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+var (
+	// aboutStyle is the dim explanation after a group heading or an
+	// experimental setting's name.
+	aboutStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	// groupStyle heads the config screen's two groups, repos and
+	// experimental. It stands out more than the section titles inside them.
+	groupStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("255")).Bold(true)
+	// The repos group has one more level than the list screen, its
+	// sections, so they and their rows sit two cells further in.
+	repoSectionStyle  = sectionStyle.PaddingLeft(4)
+	repoItemStyle     = itemStyle.PaddingLeft(6)
+	repoSelectedStyle = selectedItemStyle.PaddingLeft(4)
+)
+
+// groupHeading is a group's name followed by what the group is for.
+func groupHeading(name, about string) string {
+	return groupStyle.Render(name) + "  " + aboutStyle.Render(about)
+}
 
 // repoSection is one group of rows on the config screen.
 type repoSection struct {
@@ -230,6 +246,10 @@ func (m model) viewConfig() string {
 		b.WriteString("\n\n")
 	}
 
+	// The screen has two groups, each under a heading that says what it is
+	// for: the repos, in sections by where each one came from, and the
+	// experimental settings.
+	b.WriteString(groupHeading("repos", "pick the repos to list your prs from") + "\n")
 	secs := m.sections()
 	if len(secs) == 0 && !m.suggestLoading {
 		b.WriteString(itemStyle.Render("no repos yet. press a to add one."))
@@ -240,7 +260,7 @@ func (m model) viewConfig() string {
 		if si > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString(sectionStyle.Render(sec.title))
+		b.WriteString(repoSectionStyle.Render(sec.title))
 		b.WriteString("\n")
 		for _, repo := range sec.repos {
 			mark := uncheckedStyle.Render("○")
@@ -249,9 +269,9 @@ func (m model) viewConfig() string {
 			}
 			line := mark + " " + repo
 			if row == m.cfgCursor && m.mode == modeConfig {
-				b.WriteString(selectedItemStyle.Render("➤ " + line))
+				b.WriteString(repoSelectedStyle.Render("➤ " + line))
 			} else {
-				b.WriteString(itemStyle.Render(line))
+				b.WriteString(repoItemStyle.Render(line))
 			}
 			b.WriteString("\n")
 			row++
@@ -273,9 +293,9 @@ func (m model) viewConfig() string {
 		if len(secs) > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString(sectionStyle.Render(suggestedTitle))
+		b.WriteString(repoSectionStyle.Render(suggestedTitle))
 		b.WriteString("\n")
-		b.WriteString(itemStyle.Render(strings.TrimRight(m.spinner.View(), " ")))
+		b.WriteString(repoItemStyle.Render(strings.TrimRight(m.spinner.View(), " ")))
 		b.WriteString("\n")
 	case m.suggestErr != nil:
 		b.WriteString("\n" + errorStyle.Render(fmt.Sprintf("⚠ could not load suggestions: %v", m.suggestErr)))
@@ -287,7 +307,7 @@ func (m model) viewConfig() string {
 
 	// The experimental settings come after every repo row, so their cursor
 	// rows are numbered on from the repos'.
-	b.WriteString("\n" + sectionStyle.Render("experimental") + "\n")
+	b.WriteString("\n" + groupHeading("experimental", "opt-in features that may change or go away") + "\n")
 	for i, e := range experiments {
 		mark := uncheckedStyle.Render("○")
 		if *e.flag(&m.experimental) {

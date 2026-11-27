@@ -359,3 +359,21 @@ func TestFirstRunFirstFrameShowsSuggestedLoading(t *testing.T) {
 		t.Fatal("Init should start the suggestion lookup")
 	}
 }
+
+func TestConfigHasARepoGroupAndAnExperimentalGroup(t *testing.T) {
+	m := newTestModel(t, []string{"a/one"}, "a/cur")
+	m, _ = send(m, key("c"), suggestMsg{repos: []string{"a/sug"}})
+	v := m.View()
+	order := []string{"repos", "saved", "a/one", "current directory", "a/cur", "suggested from your recent prs", "a/sug", "experimental", "stack support"}
+	at := -1
+	for _, w := range order {
+		i := strings.Index(v, w)
+		if i <= at {
+			t.Fatalf("expected %q after %q:\n%s", w, order[max(0, slices.Index(order, w)-1)], v)
+		}
+		at = i
+	}
+	if !strings.Contains(v, "pick the repos to list your prs from") || !strings.Contains(v, "opt-in features that may change or go away") {
+		t.Fatalf("each group should say what it is for:\n%s", v)
+	}
+}
