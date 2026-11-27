@@ -307,11 +307,7 @@ func (v *tabView) addPRs(prs []github.PR) {
 		}
 		v.addSelectable(listRow{stack: e.stack})
 		for i, pr := range e.stack {
-			tree := "│"
-			if i == len(e.stack)-1 {
-				tree = "└"
-			}
-			v.addPR(pr, tree)
+			v.addPR(pr, github.StackTree(i, len(e.stack)))
 		}
 	}
 }

@@ -520,7 +520,7 @@ func TestStackLayersAreGatheredUnderAHeader(t *testing.T) {
 	v := ansi.Strip(m.View())
 	want := []string{
 		"[#9] Newest, alone",
-		"┌ (+30/-3) Stack of 3 into main",
+		"┌ (+30/-3) Stack of 3",
 		"│ (+10/-1) [#5] 1/3 Bottom layer",
 		"└ (+20/-2) [#6] 2/3 Middle layer",
 		"[#8] Older, alone",
@@ -534,8 +534,8 @@ func TestStackLayersAreGatheredUnderAHeader(t *testing.T) {
 		at = i
 	}
 	// The header names the lowest layer holding the stack back.
-	if !strings.Contains(v, "Stack of 3 into main") || !strings.Contains(v, "#6 needs review") {
-		t.Fatalf("header should carry the blocking layer's label:\n%s", v)
+	if strings.Contains(v, "into main") || !strings.Contains(v, "#6 needs review") {
+		t.Fatalf("header should carry the blocking layer's label, and no branch:\n%s", v)
 	}
 
 	// The header is a row of its own: Enter there copies the whole stack.

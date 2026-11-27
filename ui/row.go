@@ -114,12 +114,11 @@ func groupStacks(prs []github.PR) []rowEntry {
 }
 
 // stackHeading is the size and text of a stack's header row: the layers'
-// sizes added up, and how many PRs the stack has and where it merges. They
-// match the first line of github.FormatStackForSlack.
+// sizes added up, and how many PRs the stack has. They match the first line
+// of github.FormatStackForSlack.
 func stackHeading(layers []github.PR) (stats, text string) {
 	add, del := github.StackSize(layers)
-	s := layers[0].Stack
-	return fmt.Sprintf("(+%d/-%d)", add, del), fmt.Sprintf("Stack of %d into %s", s.Size, s.Base)
+	return fmt.Sprintf("(+%d/-%d)", add, del), github.StackTitle(layers)
 }
 
 // blocksStack is the statuses that keep a layer, and so its stack, from
@@ -243,8 +242,8 @@ func renderPR(pr github.PR, tree string, selected bool, layout rowLayout) string
 }
 
 // renderStackHeader draws the row above a stack's layers: their combined
-// size, how many PRs the stack has and where it merges, and the stack's
-// label in the shared column.
+// size, how many PRs the stack has, and the stack's label in the shared
+// column.
 func renderStackHeader(layers []github.PR, selected bool, layout rowLayout) string {
 	stats, text := stackHeading(layers)
 	lead := treeWidth + ansi.StringWidth(stats) + 1
