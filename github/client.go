@@ -366,18 +366,18 @@ func ValidRepo(s string) bool {
 // link text is the bare PR number; the URL already identifies the repo. The
 // link sits before the title rather than at the end, because a pasted line
 // ending in "#123" makes Slack pop up its channel autocomplete. A layer of a
-// stack has its StackTag between the link and the title.
+// stack starts with its StackTag.
 func (pr PR) FormatForSlack() string {
 	tag := ""
 	if t := pr.StackTag(); t != "" {
-		tag = "`" + t + "` "
+		tag = t + " "
 	}
-	return fmt.Sprintf("`(+%d/-%d)` [#%d](%s) %s%s",
+	return fmt.Sprintf("%s`(+%d/-%d)` [#%d](%s) %s",
+		tag,
 		pr.Additions,
 		pr.Deletions,
 		pr.Number,
 		pr.URL,
-		tag,
 		pr.Title)
 }
 
@@ -419,14 +419,15 @@ func FormatStackForSlack(layers []PR) string {
 	return strings.Join(lines, "\n")
 }
 
-// StackTag is the PR's place in its stack, such as "2/3" for the middle of
-// three layers, or "" when it is not in one. The list and the Slack line
-// both show it before the title, like the [PATCH 2/3] of a patch series.
+// StackTag is the PR's place in its stack, such as "2." for the second
+// layer from the bottom, or "" when it is not in one. The list and the Slack
+// line both start with it, so a stack's layers read as a numbered list under
+// the header, which already says how many there are.
 func (pr PR) StackTag() string {
 	if pr.Stack == nil {
 		return ""
 	}
-	return fmt.Sprintf("%d/%d", pr.Stack.Position, pr.Stack.Size)
+	return fmt.Sprintf("%d.", pr.Stack.Position)
 }
 
 // CIStatus folds CheckState into FAILURE / PENDING / SUCCESS / "". Empty

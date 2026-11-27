@@ -521,8 +521,8 @@ func TestStackLayersAreGatheredUnderAHeader(t *testing.T) {
 	want := []string{
 		"[#9] Newest, alone",
 		"┌ (+30/-3) Stack of 3",
-		"│ (+10/-1) [#5] 1/3 Bottom layer",
-		"└ (+20/-2) [#6] 2/3 Middle layer",
+		"│ 1. (+10/-1) [#5] Bottom layer",
+		"└ 2. (+20/-2) [#6] Middle layer",
 		"[#8] Older, alone",
 	}
 	at := -1
@@ -550,7 +550,7 @@ func TestStackLayersAreGatheredUnderAHeader(t *testing.T) {
 
 	// On a layer, Enter copies that layer's line, position included.
 	m, _ = send(m, key("down"), key("enter"))
-	if got := written(); got != "`(+10/-1)` [#5](u5) `1/3` Bottom layer" {
+	if got := written(); got != "1. `(+10/-1)` [#5](u5) Bottom layer" {
 		t.Fatalf("enter on the bottom layer copied %q", got)
 	}
 	m, _ = send(m, key("down"), key("down"))

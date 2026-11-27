@@ -59,11 +59,11 @@ prs --json
 
 ### Stacked PRs (experimental)
 
-When the user has turned on stack support in the experimental section of prs's config screen, a PR that is a layer of a GitHub stack also has a `stack` field, and its `slack` line shows its position before the title:
+When the user has turned on stack support in the experimental section of prs's config screen, a PR that is a layer of a GitHub stack also has a `stack` field, and its `slack` line starts with its position:
 
 ```json
 "stack": { "number": 7, "size": 3, "position": 2, "base": "main" },
-"slack": "`(+120/-8)` [#156](https://github.com/owner/platform/pull/156) `2/3` Retry failed webhooks from the queue"
+"slack": "2. `(+120/-8)` [#156](https://github.com/owner/platform/pull/156) Retry failed webhooks from the queue"
 ```
 
 - `position`: the PR's layer. 1 is the bottom, the one that targets `base`; each layer above targets the branch of the one below. Layers are reviewed and merged from the bottom up, and merging a layer merges every layer below it.

@@ -125,7 +125,7 @@ func TestShortRepoAndSlackFormat(t *testing.T) {
 	}
 
 	pr.Stack = &Stack{Number: 7, Size: 3, Position: 2, Base: "main"}
-	if got, want := pr.FormatForSlack(), "`(+1/-2)` [#42](u) `2/3` Fix thing"; got != want {
+	if got, want := pr.FormatForSlack(), "2. `(+1/-2)` [#42](u) Fix thing"; got != want {
 		t.Errorf("stacked slack = %q, want %q", got, want)
 	}
 }
@@ -137,8 +137,8 @@ func TestFormatStackForSlack(t *testing.T) {
 		{Number: 6, Title: "Middle", Additions: 20, Deletions: 2, URL: "u6", Stack: stack(2)},
 	}
 	want := "┌ `(+30/-3)` Stack of 3\n" +
-		"│ `(+10/-1)` [#5](u5) `1/3` Bottom\n" +
-		"└ `(+20/-2)` [#6](u6) `2/3` Middle"
+		"│ 1. `(+10/-1)` [#5](u5) Bottom\n" +
+		"└ 2. `(+20/-2)` [#6](u6) Middle"
 	if got := FormatStackForSlack(layers); got != want {
 		t.Errorf("stack slack =\n%s\nwant\n%s", got, want)
 	}
@@ -242,8 +242,8 @@ func TestParsePRsReadsStack(t *testing.T) {
 	if s := prs[0].Stack; s == nil || *s != want {
 		t.Errorf("layer stack = %+v, want %+v", s, want)
 	}
-	if prs[0].StackTag() != "2/3" {
-		t.Errorf("layer tag = %q, want 2/3", prs[0].StackTag())
+	if prs[0].StackTag() != "2." {
+		t.Errorf("layer tag = %q, want 2.", prs[0].StackTag())
 	}
 	if prs[1].Stack != nil || prs[1].StackTag() != "" {
 		t.Errorf("a PR outside a stack should have none: %+v", prs[1].Stack)

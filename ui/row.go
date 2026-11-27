@@ -51,7 +51,7 @@ var statusLabels = map[string]statusLabel{
 }
 
 var (
-	// stackTagStyle is for a layer's position in its stack, such as 2/3.
+	// stackTagStyle is for a layer's position in its stack, such as 2.
 	stackTagStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	// treeStyle draws the line that joins a stack's header to its layers.
 	treeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
@@ -62,17 +62,17 @@ var (
 const treeWidth = 2
 
 // prLead is the part of a row before the title, styled, and its width in
-// cells: size, number, the position in a stack if the PR is in one, and the
+// cells: the position in a stack if the PR is in one, size, number, and the
 // space after each. The order matches the copied Slack line.
 func prLead(pr github.PR) (lead string, width int) {
+	if tag := pr.StackTag(); tag != "" {
+		lead = stackTagStyle.Render(tag) + " "
+		width = ansi.StringWidth(tag) + 1
+	}
 	stats := fmt.Sprintf("(+%d/-%d)", pr.Additions, pr.Deletions)
 	number := fmt.Sprintf("[#%d]", pr.Number)
-	lead = statsStyle.Render(stats) + " " + numberStyle.Render(number) + " "
-	width = ansi.StringWidth(stats) + 1 + ansi.StringWidth(number) + 1
-	if tag := pr.StackTag(); tag != "" {
-		lead += stackTagStyle.Render(tag) + " "
-		width += ansi.StringWidth(tag) + 1
-	}
+	lead += statsStyle.Render(stats) + " " + numberStyle.Render(number) + " "
+	width += ansi.StringWidth(stats) + 1 + ansi.StringWidth(number) + 1
 	return lead, width
 }
 

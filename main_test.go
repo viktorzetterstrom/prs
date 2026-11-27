@@ -127,7 +127,7 @@ func TestJSONHasStackOnlyForLayers(t *testing.T) {
 	if s := got.PRs[0].Stack; s == nil || *s != want {
 		t.Errorf("layer stack = %+v, want %+v", s, want)
 	}
-	if !strings.Contains(got.PRs[0].Slack, "`2/3` Layer") {
+	if !strings.HasPrefix(got.PRs[0].Slack, "2. `(+") {
 		t.Errorf("a layer's Slack line should carry its position: %q", got.PRs[0].Slack)
 	}
 	if got.PRs[1].Stack != nil {
