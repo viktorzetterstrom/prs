@@ -51,9 +51,8 @@ type listRow struct {
 	prIndex int
 	// stack holds a stack's layers, bottom first, on the row that heads them.
 	stack []github.PR
-	// tree is the glyph in front of a layer of a stack: │, or └ in front
-	// of the last.
-	tree   string
+	// indent goes in front of a PR row: stackIndent for a layer of a stack.
+	indent string
 	empty  bool
 	spacer bool
 }
@@ -306,14 +305,14 @@ func (v *tabView) addPRs(prs []github.PR) {
 			continue
 		}
 		v.addSelectable(listRow{stack: e.stack})
-		for i, pr := range e.stack {
-			v.addPR(pr, github.StackTree(i, len(e.stack)))
+		for _, pr := range e.stack {
+			v.addPR(pr, stackIndent)
 		}
 	}
 }
 
-func (v *tabView) addPR(pr github.PR, tree string) {
-	v.addSelectable(listRow{prIndex: len(v.ordered), tree: tree})
+func (v *tabView) addPR(pr github.PR, indent string) {
+	v.addSelectable(listRow{prIndex: len(v.ordered), indent: indent})
 	v.ordered = append(v.ordered, pr)
 }
 
@@ -713,7 +712,7 @@ func (m model) renderRows() string {
 		case row.stack != nil:
 			lines[i] = renderStackHeader(row.stack, selected, layout)
 		default:
-			lines[i] = renderPR(v.ordered[row.prIndex], row.tree, selected, layout)
+			lines[i] = renderPR(v.ordered[row.prIndex], row.indent, selected, layout)
 		}
 	}
 

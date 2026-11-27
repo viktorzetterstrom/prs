@@ -50,16 +50,13 @@ var statusLabels = map[string]statusLabel{
 	"closed":            label("closed", ghDanger),
 }
 
-var (
-	// stackTagStyle is for a layer's position in its stack, such as 2.
-	stackTagStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	// treeStyle draws the line that joins a stack's header to its layers.
-	treeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-)
+// stackTagStyle is for a layer's position in its stack, such as 2.
+var stackTagStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 
-// treeWidth is the cells a tree glyph and the space after it take at the
-// start of a stack's rows.
-const treeWidth = 2
+// stackIndent puts a stack's layers a step in from their header, so it is
+// plain where the stack ends. It is the list's own; the copied stack has
+// no indent, as Slack may drop leading spaces.
+const stackIndent = "  "
 
 // prLead is the part of a row before the title, styled, and its width in
 // cells: the position in a stack if the PR is in one, size, number, and the
@@ -161,8 +158,8 @@ const labelGap = 2
 // close to the titles on a wide terminal. When that does not fit in width,
 // the column moves left to leave room for the widest label and titles are
 // truncated to meet it. 1 trailing cell is left as breathing room. A width of
-// zero (unknown) never truncates. Stack headers, and the tree glyphs in front
-// of stack layers, count towards the longest row.
+// zero (unknown) never truncates. Stack headers, and the indent of stack
+// layers, count towards the longest row.
 func newRowLayout(prs []github.PR, width int) rowLayout {
 	longest, widestLabel := 0, 0
 	fit := func(rowWidth int, l statusLabel, hasLabel bool) {
@@ -184,7 +181,7 @@ func newRowLayout(prs []github.PR, width int) rowLayout {
 		for _, pr := range e.stack {
 			_, lead := prLead(pr)
 			l, ok := statusLabels[pr.Status()]
-			fit(treeWidth+lead+ansi.StringWidth(pr.Title), l, ok)
+			fit(len(stackIndent)+lead+ansi.StringWidth(pr.Title), l, ok)
 		}
 	}
 	if width <= 0 {
@@ -224,15 +221,12 @@ func selectable(str string, selected bool) string {
 }
 
 // renderPR draws one PR line: size, number, title, then its status label in
-// the shared column. The title is truncated to end before that column. A
-// layer of a stack has tree in front, the glyph that joins it to the
-// stack's header.
-func renderPR(pr github.PR, tree string, selected bool, layout rowLayout) string {
+// the shared column. The title is truncated to end before that column.
+// indent goes in front: stackIndent for a layer of a stack, otherwise "".
+func renderPR(pr github.PR, indent string, selected bool, layout rowLayout) string {
 	leadText, lead := prLead(pr)
-	if tree != "" {
-		leadText = treeStyle.Render(tree) + " " + leadText
-		lead += treeWidth
-	}
+	leadText = indent + leadText
+	lead += ansi.StringWidth(indent)
 	title := fitTitle(pr.Title, layout.labelCol-labelGap-lead, layout)
 	str := leadText + title
 	if l, ok := statusLabels[pr.Status()]; ok {
@@ -243,7 +237,7 @@ func renderPR(pr github.PR, tree string, selected bool, layout rowLayout) string
 
 // renderStackHeader draws the row above a stack's layers: their combined
 // size, how many PRs the stack has, and the stack's label in the shared
-// column. Like the first line of the copied stack, it has no tree glyph.
+// column.
 func renderStackHeader(layers []github.PR, selected bool, layout rowLayout) string {
 	stats, text := stackHeading(layers)
 	lead := ansi.StringWidth(stats) + 1

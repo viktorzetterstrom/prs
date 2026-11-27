@@ -521,8 +521,8 @@ func TestStackLayersAreGatheredUnderAHeader(t *testing.T) {
 	want := []string{
 		"[#9] Newest, alone",
 		"    (+30/-3) Stack of 3",
-		"│ 1. (+10/-1) [#5] Bottom layer",
-		"└ 2. (+20/-2) [#6] Middle layer",
+		"\n      1. (+10/-1) [#5] Bottom layer",
+		"\n      2. (+20/-2) [#6] Middle layer",
 		"[#8] Older, alone",
 	}
 	at := -1
@@ -572,8 +572,8 @@ func TestStackHeaderLabelWhenNothingBlocks(t *testing.T) {
 func TestStacklessPRsAreNotRegrouped(t *testing.T) {
 	m := newTestModel(t, []string{"a/one"}, "")
 	m, _ = send(m, refreshMsg{prs: []github.PR{{Number: 2, Repo: "a/one"}, {Number: 1, Repo: "a/one"}}})
-	if v := m.View(); strings.ContainsAny(v, "│└") {
-		t.Fatalf("without stacks there should be no tree:\n%s", v)
+	if v := ansi.Strip(m.View()); strings.Contains(v, "Stack of") || strings.Contains(v, "\n      (+") {
+		t.Fatalf("without stacks there should be no header or indent:\n%s", v)
 	}
 	if len(m.cur().selectable) != 2 {
 		t.Fatalf("each PR should be one selectable row, got %d", len(m.cur().selectable))

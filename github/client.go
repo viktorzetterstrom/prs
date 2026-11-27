@@ -396,29 +396,15 @@ func StackTitle(layers []PR) string {
 	return fmt.Sprintf("Stack of %d", layers[0].Stack.Size)
 }
 
-// StackTree is the glyph in front of layer i of n, below the line heading
-// their stack: "│" beside each layer, and "└" beside the last, so together
-// they draw one line down the stack. Slack's font has no box-drawing
-// characters of its own; "├" comes out of a fallback font out of line with
-// these two, so it is not used.
-func StackTree(i, n int) string {
-	if i == n-1 {
-		return "└"
-	}
-	return "│"
-}
-
 // FormatStackForSlack renders layers of one stack, bottom first, the way the
 // list shows them: a heading line with the layers' combined size and
-// StackTitle, then each layer's own Slack line after its StackTree glyph.
-// The heading stays out of the tree: in Slack's compact view a message's
-// first line sits beside the sender's name, so only glyphs from the second
-// line on stay in one column.
+// StackTitle, then each layer's own Slack line, which starts with its
+// position, so they read as a numbered list.
 func FormatStackForSlack(layers []PR) string {
 	add, del := StackSize(layers)
 	lines := []string{fmt.Sprintf("`(+%d/-%d)` %s", add, del, StackTitle(layers))}
-	for i, pr := range layers {
-		lines = append(lines, StackTree(i, len(layers))+" "+pr.FormatForSlack())
+	for _, pr := range layers {
+		lines = append(lines, pr.FormatForSlack())
 	}
 	return strings.Join(lines, "\n")
 }
